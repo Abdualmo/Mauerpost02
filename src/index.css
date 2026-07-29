@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #f5f0e8;
+  color: #1a1a1a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn-primary {
+  background-color: #c8a96b;
+  color: #ffffff;
+  border-radius: 0.75rem;
+  padding: 0.55rem 1rem;
+  font-weight: 500;
+  transition: background-color 150ms ease, transform 100ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.btn-primary:hover {
+  background-color: #b8975a;
+}
+.btn-primary:active {
+  transform: translateY(1px);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #1a1a1a;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.btn-ghost:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-danger {
+  background-color: #d64545;
+  color: #ffffff;
+  border-radius: 0.75rem;
+  padding: 0.55rem 1rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.btn-danger:hover {
+  background-color: #b83a3a;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.input:focus {
+  border-color: #c8a96b;
+  box-shadow: 0 0 0 3px rgba(200, 169, 107, 0.25);
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.75);
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.card {
+  background-color: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px -6px rgba(0, 0, 0, 0.08);
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.dialog-panel {
+  background: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.35);
+  width: 100%;
+  max-width: 32rem;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
