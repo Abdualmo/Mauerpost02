@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { AlertTriangle, Trash2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
+import { useConfirm } from "../../contexts/ConfirmContext.jsx";
 import {
   computeYearStats,
   isAbsentOn,
@@ -12,7 +13,7 @@ import { todayISO } from "../../lib/date.js";
 import UsedVacationPopover from "./UsedVacationPopover.jsx";
 import SwipeableRow from "./SwipeableRow.jsx";
 
-function EmployeeRow({ emp, year, today, onOpen, onDelete, onPopover, popoverOpen }) {
+function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
   const { vacations, company } = useData();
   const stats = computeYearStats({ employee: emp, vacations, year });
   const absent = isAbsentOn({
@@ -31,7 +32,7 @@ function EmployeeRow({ emp, year, today, onOpen, onDelete, onPopover, popoverOpe
   return (
     <div
       onClick={() => onOpen(emp.id)}
-      className={`grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-3 text-sm cursor-pointer transition-colors group ${
+      className={`grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-3 text-sm cursor-pointer transition-colors ${
         absent ? "bg-gold-absent" : "hover:bg-gold-softest"
       }`}
       style={
@@ -72,10 +73,8 @@ function EmployeeRow({ emp, year, today, onOpen, onDelete, onPopover, popoverOpe
         </div>
       </div>
 
-      {/* Anspruch */}
       <div className="text-right tabular-nums w-14">{stats.annual}</div>
 
-      {/* Genommen (with popover) */}
       <div
         className="text-right tabular-nums w-14 relative"
         onClick={(e) => {
@@ -96,12 +95,10 @@ function EmployeeRow({ emp, year, today, onOpen, onDelete, onPopover, popoverOpe
         )}
       </div>
 
-      {/* Rest */}
       <div className="text-right tabular-nums w-16 font-medium">
         {stats.remaining}
       </div>
 
-      {/* Vorjahr */}
       <div className="text-right w-24 hidden sm:block">
         {stats.carryoverTotal > 0 ? (
           <span
@@ -124,38 +121,30 @@ function EmployeeRow({ emp, year, today, onOpen, onDelete, onPopover, popoverOpe
           <span className="text-black/40">–</span>
         )}
       </div>
-
-      {/* Desktop hover trash */}
-      <button
-        type="button"
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-black/40 hover:text-red-sick p-1 hidden sm:inline-flex"
-        title="Mitarbeiter löschen"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(emp);
-        }}
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
     </div>
   );
 }
 
 export default function EmployeeTable({ employees, year, onOpen }) {
-  const { canManage, company } = useAuth();
+  const { canManage } = useAuth();
   const { deleteEmployee } = useData();
+  const confirm = useConfirm();
   const [popover, setPopover] = useState(null);
   const today = todayISO();
 
-  function confirmDelete(emp) {
-    if (!canManage) return;
-    if (
-      confirm(
-        `Möchten Sie „${emp.fullName}" wirklich löschen? Alle zugehörigen Einträge werden mit gelöscht.`,
-      )
-    ) {
-      deleteEmployee(emp.id);
-    }
+  // Returns true when actually deleted, false if user cancelled — the
+  // SwipeableRow uses this to spring back on cancel.
+  async function askAndDelete(emp) {
+    if (!canManage) return false;
+    const ok = await confirm({
+      title: "Mitarbeiter löschen?",
+      message: `Möchtest du „${emp.fullName}" wirklich löschen? Alle zugehörigen Urlaubseinträge werden ebenfalls entfernt.`,
+      confirmLabel: "Löschen",
+      danger: true,
+    });
+    if (!ok) return false;
+    deleteEmployee(emp.id);
+    return true;
   }
 
   if (employees.length === 0) {
@@ -173,28 +162,24 @@ export default function EmployeeTable({ employees, year, onOpen }) {
 
   return (
     <div className="card overflow-hidden">
-      {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-2 bg-gold-softer text-left text-xs text-black/60 uppercase tracking-wide">
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-2 bg-gold-softer text-left text-xs text-black/60 uppercase tracking-wide">
         <div>Name</div>
         <div className="w-14 text-right">Anspruch</div>
         <div className="w-14 text-right">Genom.</div>
         <div className="w-16 text-right">Rest</div>
         <div className="w-24 text-right hidden sm:block">Vorjahr</div>
-        <div className="w-6" />
       </div>
 
-      {/* Rows */}
       <ul className="divide-y divide-black/5">
         {employees.map((emp) => (
           <li key={emp.id}>
             {canManage ? (
-              <SwipeableRow onDelete={() => confirmDelete(emp)}>
+              <SwipeableRow onDelete={() => askAndDelete(emp)}>
                 <EmployeeRow
                   emp={emp}
                   year={year}
                   today={today}
                   onOpen={onOpen}
-                  onDelete={confirmDelete}
                   onPopover={setPopover}
                   popoverOpen={popover === emp.id}
                 />
@@ -205,7 +190,6 @@ export default function EmployeeTable({ employees, year, onOpen }) {
                 year={year}
                 today={today}
                 onOpen={onOpen}
-                onDelete={confirmDelete}
                 onPopover={setPopover}
                 popoverOpen={popover === emp.id}
               />
@@ -214,9 +198,8 @@ export default function EmployeeTable({ employees, year, onOpen }) {
         ))}
       </ul>
 
-      {/* Mobile hint */}
       {canManage && (
-        <div className="text-[11px] text-black/40 px-3 sm:px-4 py-2 border-t border-black/5 sm:hidden">
+        <div className="text-[11px] text-black/40 px-3 sm:px-4 py-2 border-t border-black/5">
           Tipp: Zeile nach links wischen, um zu löschen.
         </div>
       )}

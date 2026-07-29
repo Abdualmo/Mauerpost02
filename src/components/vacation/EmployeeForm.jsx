@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
+import { useConfirm } from "../../contexts/ConfirmContext.jsx";
 
 export default function EmployeeForm({
   employee,
@@ -9,6 +10,7 @@ export default function EmployeeForm({
   onDeleted,
 }) {
   const { createEmployee, updateEmployee, deleteEmployee } = useData();
+  const confirm = useConfirm();
   const isEdit = Boolean(employee);
 
   const [fullName, setFullName] = useState(employee?.fullName || "");
@@ -44,14 +46,15 @@ export default function EmployeeForm({
     onClose();
   }
 
-  function remove() {
+  async function remove() {
     if (!isEdit) return;
-    if (
-      !confirm(
-        `Mitarbeiter „${employee.fullName}" und alle zugehörigen Einträge löschen?`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: "Mitarbeiter löschen?",
+      message: `Möchtest du „${employee.fullName}" wirklich löschen? Alle zugehörigen Urlaubseinträge werden ebenfalls entfernt.`,
+      confirmLabel: "Löschen",
+      danger: true,
+    });
+    if (!ok) return;
     deleteEmployee(employee.id);
     onClose();
     onDeleted && onDeleted();

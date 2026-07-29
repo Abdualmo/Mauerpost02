@@ -13,6 +13,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { useData } from "../../contexts/DataContext.jsx";
 import { usePortable } from "../../contexts/PortableContext.jsx";
+import { useConfirm } from "../../contexts/ConfirmContext.jsx";
 
 const MONTH_NAMES = [
   "Januar",
@@ -66,6 +67,7 @@ export default function SettingsDialog({ onClose }) {
   const { company, resetAll } = useAuth();
   const { updateCompany } = useData();
   const portable = usePortable();
+  const confirmDialog = useConfirm();
   const [name, setName] = useState(company?.name || "");
   const [defaultVacationDays, setDefaults] = useState(
     company?.defaultVacationDays ?? 30,
@@ -329,15 +331,17 @@ export default function SettingsDialog({ onClose }) {
             <button
               type="button"
               className="btn-ghost !py-1.5 text-red-sick hover:bg-red-50 self-start sm:self-center"
-              onClick={() => {
-                if (
-                  confirm(
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "Alles zurücksetzen?",
+                  message:
                     "Wirklich alle Daten (Firma, Mitarbeiter, Urlaube) löschen? Dies kann nicht rückgängig gemacht werden.",
-                  )
-                ) {
-                  resetAll();
-                  onClose();
-                }
+                  confirmLabel: "Zurücksetzen",
+                  danger: true,
+                });
+                if (!ok) return;
+                resetAll();
+                onClose();
               }}
             >
               Alles zurücksetzen

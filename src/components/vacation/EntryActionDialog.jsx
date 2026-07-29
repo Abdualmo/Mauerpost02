@@ -10,6 +10,7 @@ import { addDays, parseISO } from "date-fns";
 import { toISO } from "../../lib/date.js";
 import { useData } from "../../contexts/DataContext.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
+import { useConfirm } from "../../contexts/ConfirmContext.jsx";
 
 const meta = {
   [TYPE_URLAUB]: { color: "#C8A96B", label: "Urlaub" },
@@ -20,6 +21,7 @@ const meta = {
 export default function EntryActionDialog({ entry, dayISO, onClose }) {
   const { updateVacation, deleteVacation, createVacation } = useData();
   const { canManage } = useAuth();
+  const confirm = useConfirm();
   const [notes, setNotes] = useState(entry.notes || "");
   const [savedMsg, setSavedMsg] = useState("");
   const isRecurring = Boolean(entry.recurring);
@@ -32,9 +34,15 @@ export default function EntryActionDialog({ entry, dayISO, onClose }) {
     setTimeout(() => setSavedMsg(""), 1500);
   }
 
-  function deleteEntire() {
+  async function deleteEntire() {
     if (!canManage || isRecurring) return;
-    if (!confirm("Kompletten Zeitraum wirklich löschen?")) return;
+    const ok = await confirm({
+      title: "Zeitraum löschen?",
+      message: "Möchtest du diesen kompletten Zeitraum wirklich löschen?",
+      confirmLabel: "Löschen",
+      danger: true,
+    });
+    if (!ok) return;
     deleteVacation(entry.id);
     onClose();
   }

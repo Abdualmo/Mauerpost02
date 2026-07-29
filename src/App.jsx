@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { DataProvider } from "./contexts/DataContext.jsx";
 import { PortableProvider } from "./contexts/PortableContext.jsx";
+import { ConfirmProvider } from "./contexts/ConfirmContext.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import EmployeeDetailPage from "./pages/EmployeeDetailPage.jsx";
 import AppHeader from "./components/vacation/AppHeader.jsx";
@@ -66,10 +67,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <DataProvider>
-        <Shell />
-      </DataProvider>
-    </AuthProvider>
+    <ConfirmProvider>
+      <AuthProvider>
+        <DataProvider>
+          <Shell />
+        </DataProvider>
+      </AuthProvider>
+    </ConfirmProvider>
   );
 }

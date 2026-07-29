@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
+import { useConfirm } from "../contexts/ConfirmContext.jsx";
 import {
   birthdayISO as birthdayForYear,
   collectYearEntries,
@@ -19,6 +20,7 @@ import EmployeeForm from "../components/vacation/EmployeeForm.jsx";
 export default function EmployeeDetailPage({ employeeId, onBack }) {
   const { employees, vacations, company, deleteVacation } = useData();
   const { canManage } = useAuth();
+  const confirm = useConfirm();
   const [year, setYear] = useState(new Date().getFullYear());
   const [draftStart, setDraftStart] = useState(null);
   const [draftRange, setDraftRange] = useState(null); // { startDate, endDate }
@@ -195,9 +197,15 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
           entries={entries}
           year={year}
           canManage={canManage}
-          onDelete={(e) => {
+          onDelete={async (e) => {
             if (e.recurring) return;
-            if (!confirm("Eintrag wirklich löschen?")) return;
+            const ok = await confirm({
+              title: "Eintrag löschen?",
+              message: "Möchtest du diesen Urlaubs-/Krankheits-Eintrag wirklich löschen?",
+              confirmLabel: "Löschen",
+              danger: true,
+            });
+            if (!ok) return;
             deleteVacation(e.id);
           }}
         />
