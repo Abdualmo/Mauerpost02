@@ -13,6 +13,33 @@ export const TYPE_URLAUB = "urlaub";
 export const TYPE_KRANKHEIT = "krankheit";
 export const TYPE_BETRIEBSURLAUB = "betriebsurlaub";
 
+// Prorated annual vacation quota:
+// - Hired in a prior calendar year -> full annual quota
+// - Hired in the current viewing year -> (annual / 12) * full months remaining
+//   * Only whole calendar months count. Hire on the 1st -> that month counts;
+//     any later day -> the month does NOT count.
+// - Hired in a future year -> 0
+// Rounding: half rounds up (Math.round on positive numbers).
+export function proratedAnnual(employee, year) {
+  const annual = Number(employee?.yearlyVacationDays) || 0;
+  if (!employee?.hireDate) return annual;
+  const hire = parseISO(employee.hireDate);
+  const hireYear = hire.getFullYear();
+  if (hireYear > year) return 0;
+  if (hireYear < year) return annual;
+  const firstFullMonth = hire.getDate() === 1 ? hire.getMonth() : hire.getMonth() + 1;
+  const months = Math.max(0, 12 - firstFullMonth);
+  if (months === 12) return annual;
+  const raw = (annual / 12) * months;
+  return Math.round(raw);
+}
+
+export function isProrated(employee, year) {
+  if (!employee?.hireDate) return false;
+  const hire = parseISO(employee.hireDate);
+  return hire.getFullYear() === year && !(hire.getDate() === 1 && hire.getMonth() === 0);
+}
+
 export function isWorkday(date) {
   return !isWeekend(date);
 }
@@ -163,26 +190,22 @@ export function computeCarryover(employee, vacations, viewYear) {
   const prevCarryover = viewYear - 1 > (hire ? hire.getFullYear() : viewYear - 1)
     ? computeCarryoverRaw(employee, vacations, prevYear)
     : 0;
-  // What was truly used against previous year's annual quota
-  // (any Q1 usage of the previous year that consumed the pre-prev-year carryover
-  //  does not count against prevYear's annual quota).
   const q1PrevUsed = urlaubWorkdaysInQ1(vacations, employee.id, prevYear);
   const q1PrevAgainstCarryover = Math.min(prevCarryover, q1PrevUsed);
   const usedAgainstPrevAnnual = usedPrev - q1PrevAgainstCarryover;
   const remainingPrev = Math.max(
     0,
-    employee.yearlyVacationDays - usedAgainstPrevAnnual,
+    proratedAnnual(employee, prevYear) - usedAgainstPrevAnnual,
   );
   return remainingPrev;
 }
 
-// Helper used only inside computeCarryover (non-recursive fixed depth 1)
 function computeCarryoverRaw(employee, vacations, year) {
   const hire = employee.hireDate ? parseISO(employee.hireDate) : null;
   if (hire && hire.getFullYear() >= year) return 0;
   const prev = year - 1;
   const usedPrev = urlaubWorkdaysInYear(vacations, employee.id, prev);
-  const remaining = Math.max(0, employee.yearlyVacationDays - usedPrev);
+  const remaining = Math.max(0, proratedAnnual(employee, prev) - usedPrev);
   return remaining;
 }
 
@@ -202,7 +225,9 @@ export function isCarryoverAvailable(viewYear, today = new Date()) {
 // - remaining: max(0, annual - usedAgainstAnnual)
 // - carryoverRemaining: carryoverAvailable - usedAgainstCarryover
 export function computeYearStats({ employee, vacations, year, today }) {
-  const annual = Number(employee.yearlyVacationDays) || 0;
+  const annual = proratedAnnual(employee, year);
+  const annualFull = Number(employee.yearlyVacationDays) || 0;
+  const prorated = isProrated(employee, year);
   const carryoverTotal = computeCarryover(employee, vacations, year);
   const available = isCarryoverAvailable(year, today || new Date())
     ? carryoverTotal
@@ -218,6 +243,8 @@ export function computeYearStats({ employee, vacations, year, today }) {
     : 0;
   return {
     annual,
+    annualFull,
+    prorated,
     carryoverTotal,
     carryoverAvailable: available,
     carryoverExpired: expired,
@@ -248,6 +275,16 @@ export function birthdayISO(birthDateISO, year) {
   const day = parts[2];
   if (!month || !day) return null;
   return `${year}-${month}-${day}`;
+}
+
+// From Nov 1 of the current year, warn when more than 10 remaining days.
+// Only relevant for the current calendar year.
+export function shouldWarnHighCarryover({ remaining, viewYear, today = new Date() }) {
+  const thisYear = today.getFullYear();
+  if (viewYear !== thisYear) return false;
+  const cutoff = new Date(thisYear, 10, 1); // Nov 1
+  if (today < cutoff) return false;
+  return remaining > 10;
 }
 
 // Is the employee absent today (any relevant entry)?

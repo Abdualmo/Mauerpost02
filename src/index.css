@@ -106,10 +106,15 @@ button {
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
   z-index: 50;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .dialog-panel {
@@ -118,8 +123,13 @@ button {
   box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.35);
   width: 100%;
   max-width: 32rem;
-  max-height: 90vh;
-  overflow-y: auto;
+  margin: auto;
+}
+
+@media (min-height: 640px) {
+  .dialog-backdrop {
+    align-items: center;
+  }
 }
 
 .scrollbar-thin::-webkit-scrollbar {

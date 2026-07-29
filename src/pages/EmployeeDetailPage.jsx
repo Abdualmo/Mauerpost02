@@ -225,6 +225,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
         <EmployeeForm
           employee={employee}
           onClose={() => setEditEmp(false)}
+          onDeleted={onBack}
         />
       )}
     </div>

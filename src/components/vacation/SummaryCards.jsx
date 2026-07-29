@@ -38,6 +38,7 @@ export default function SummaryCards({ stats, year }) {
         icon={CalendarCheck}
         label="Jahresanspruch"
         value={stats.annual}
+        hint={stats.prorated ? `anteilig · voll ${stats.annualFull}` : undefined}
       />
       <Card
         icon={Clock3}

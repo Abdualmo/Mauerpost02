@@ -4,6 +4,7 @@ const K_EMPLOYEES = "vpg.employees";
 const K_VACATIONS = "vpg.vacations";
 const K_SESSION = "vpg.session";
 const K_ACTIVE_COMPANY = "vpg.activeCompany";
+const K_WARN_ACK = "vpg.warningsAcked";
 
 export function storageAvailable() {
   try {
@@ -154,6 +155,7 @@ export function exportAll() {
     companies: getCompanies(),
     employees: read(K_EMPLOYEES),
     vacations: read(K_VACATIONS),
+    warningsAcked: readAcks(),
   };
 }
 
@@ -169,6 +171,9 @@ export function importAll(data) {
   localStorage.setItem(K_VACATIONS, JSON.stringify(data.vacations));
   if (data.activeCompanyId) {
     localStorage.setItem(K_ACTIVE_COMPANY, data.activeCompanyId);
+  }
+  if (data.warningsAcked && typeof data.warningsAcked === "object") {
+    localStorage.setItem(K_WARN_ACK, JSON.stringify(data.warningsAcked));
   }
   notify();
 }
@@ -199,10 +204,32 @@ export function resetAll() {
       K_VACATIONS,
       K_SESSION,
       K_ACTIVE_COMPANY,
+      K_WARN_ACK,
     ].forEach((k) => localStorage.removeItem(k));
   } catch {
     /* ignore */
   }
+}
+
+function readAcks() {
+  try {
+    const raw = localStorage.getItem(K_WARN_ACK);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function isWarningAcked(employeeId, year) {
+  const acks = readAcks();
+  return Boolean(acks[`${employeeId}:${year}`]);
+}
+
+export function ackWarning(employeeId, year) {
+  const acks = readAcks();
+  acks[`${employeeId}:${year}`] = true;
+  localStorage.setItem(K_WARN_ACK, JSON.stringify(acks));
+  notify();
 }
 
 export function getEmployees(companyId) {

@@ -6,6 +6,7 @@ export default function EmployeeForm({
   employee,
   defaultVacationDays = 30,
   onClose,
+  onDeleted,
 }) {
   const { createEmployee, updateEmployee, deleteEmployee } = useData();
   const isEdit = Boolean(employee);
@@ -53,6 +54,7 @@ export default function EmployeeForm({
       return;
     deleteEmployee(employee.id);
     onClose();
+    onDeleted && onDeleted();
   }
 
   return (
