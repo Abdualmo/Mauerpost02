@@ -25,8 +25,24 @@ function read(key) {
   }
 }
 
+const listeners = new Set();
+export function onDataChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+function notify() {
+  listeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 function write(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+  notify();
 }
 
 function uid() {
@@ -123,9 +139,38 @@ export function setActiveCompanyId(id) {
   try {
     if (id) localStorage.setItem(K_ACTIVE_COMPANY, id);
     else localStorage.removeItem(K_ACTIVE_COMPANY);
+    notify();
   } catch {
     /* ignore */
   }
+}
+
+// Full-store export/import used by portable-file sync.
+export function exportAll() {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    activeCompanyId: getActiveCompanyId(),
+    companies: getCompanies(),
+    employees: read(K_EMPLOYEES),
+    vacations: read(K_VACATIONS),
+  };
+}
+
+export function importAll(data) {
+  if (!data || typeof data !== "object") {
+    throw new Error("Ungültige Datei: kein Objekt.");
+  }
+  if (!Array.isArray(data.companies) || !Array.isArray(data.employees) || !Array.isArray(data.vacations)) {
+    throw new Error("Ungültige Datei: Struktur passt nicht.");
+  }
+  localStorage.setItem(K_COMPANIES, JSON.stringify(data.companies));
+  localStorage.setItem(K_EMPLOYEES, JSON.stringify(data.employees));
+  localStorage.setItem(K_VACATIONS, JSON.stringify(data.vacations));
+  if (data.activeCompanyId) {
+    localStorage.setItem(K_ACTIVE_COMPANY, data.activeCompanyId);
+  }
+  notify();
 }
 
 // Ensures a company exists and is marked active. If nothing is stored yet,

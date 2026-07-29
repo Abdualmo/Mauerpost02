@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  Save,
+  FolderOpen,
+  Download,
+  Upload,
+  Unlink,
+  HardDrive,
+} from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { useData } from "../../contexts/DataContext.jsx";
+import { usePortable } from "../../contexts/PortableContext.jsx";
 
 const MONTH_NAMES = [
   "Januar",
@@ -54,6 +65,7 @@ function DayPicker({ value, onChange }) {
 export default function SettingsDialog({ onClose }) {
   const { company, resetAll } = useAuth();
   const { updateCompany } = useData();
+  const portable = usePortable();
   const [name, setName] = useState(company?.name || "");
   const [defaultVacationDays, setDefaults] = useState(
     company?.defaultVacationDays ?? 30,
@@ -207,9 +219,112 @@ export default function SettingsDialog({ onClose }) {
             )}
           </div>
 
+          <div className="border-t border-black/5 pt-4">
+            <div className="flex items-center gap-2 mb-2">
+              <HardDrive className="w-4 h-4 text-black/60" />
+              <div className="font-medium">Datei-Speicher (z. B. USB-Stick)</div>
+            </div>
+            <div className="text-xs text-black/60 mb-3">
+              Verbinde die App mit einer Datei — z. B. auf deinem USB-Stick.
+              Jede Änderung wird dann automatisch dort gespeichert und wandert
+              mit dem Stick von Rechner zu Rechner. Export/Import funktioniert
+              in jedem Browser.
+            </div>
+
+            {portable.isPortable ? (
+              <div className="rounded-xl bg-gold-softer p-3 flex flex-col gap-2 mb-3">
+                <div className="text-sm">
+                  <span className="font-medium">Verbunden mit:</span>{" "}
+                  <span className="tabular-nums">{portable.handleName}</span>
+                </div>
+                <div className="text-xs text-black/60">
+                  Status:{" "}
+                  {portable.status === "saving"
+                    ? "Speichert…"
+                    : portable.status === "saved"
+                      ? "Gespeichert"
+                      : portable.status === "error"
+                        ? "Fehler"
+                        : "Bereit"}
+                </div>
+                {portable.error && (
+                  <div className="text-xs text-red-700">{portable.error}</div>
+                )}
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <button
+                    className="btn-ghost bg-white !py-1.5"
+                    onClick={() => portable.saveNow()}
+                  >
+                    <Save className="w-4 h-4" /> Jetzt speichern
+                  </button>
+                  <button
+                    className="btn-ghost !py-1.5"
+                    onClick={() => portable.detach()}
+                  >
+                    <Unlink className="w-4 h-4" /> Verbindung trennen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-gold-softer p-3 mb-3">
+                {portable.supportsFS ? (
+                  <>
+                    <div className="text-sm mb-2">
+                      Auto-Speichern in eine Datei (empfohlen, Chrome/Edge):
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn-primary !py-1.5"
+                        onClick={() => portable.openExisting()}
+                      >
+                        <FolderOpen className="w-4 h-4" /> Vorhandene Datei öffnen
+                      </button>
+                      <button
+                        className="btn-ghost bg-white !py-1.5"
+                        onClick={() => portable.createNew()}
+                      >
+                        <Plus className="w-4 h-4" /> Neue Datei anlegen
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-black/70">
+                    Dein Browser unterstützt kein automatisches Datei-Speichern.
+                    Nutze stattdessen Export/Import unten — funktioniert überall.
+                  </div>
+                )}
+                {portable.error && (
+                  <div className="text-xs text-red-700 mt-2">
+                    {portable.error}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="text-xs text-black/60 mb-2">
+              Immer verfügbar — für Backups oder wenn dein Browser kein
+              Auto-Speichern kann:
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn-ghost bg-white shadow-soft !py-1.5"
+                onClick={() => portable.exportDownload()}
+              >
+                <Download className="w-4 h-4" /> Exportieren (Download)
+              </button>
+              <button
+                className="btn-ghost bg-white shadow-soft !py-1.5"
+                onClick={() => portable.importClassic()}
+              >
+                <Upload className="w-4 h-4" /> Importieren (Datei wählen)
+              </button>
+            </div>
+          </div>
+
           <div className="text-xs text-black/60 bg-gold-softer rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2">
             <span className="flex-1">
               Alle Daten werden lokal in diesem Browser gespeichert.
+              {portable.isPortable && " Zusätzlich in der verbundenen Datei."}
             </span>
             <button
               type="button"

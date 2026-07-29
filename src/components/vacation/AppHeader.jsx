@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { CalendarDays, Settings2 } from "lucide-react";
+import { CalendarDays, HardDrive, Settings2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext.jsx";
+import { usePortable } from "../../contexts/PortableContext.jsx";
 import SettingsDialog from "./SettingsDialog.jsx";
 
 export default function AppHeader() {
   const { company } = useAuth();
+  const portable = usePortable();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -21,9 +23,28 @@ export default function AppHeader() {
             {company?.name || "VacationPlanner Gold"}
           </div>
           <div className="text-xs text-black/50 truncate">
-            Deine Daten bleiben in diesem Browser gespeichert
+            {portable.isPortable
+              ? `Datei-Sync: ${portable.handleName}`
+              : "Daten bleiben in diesem Browser"}
           </div>
         </div>
+        {portable.isPortable && (
+          <span
+            className={`hidden sm:inline-flex items-center gap-1 text-xs rounded-full px-2 py-1 ${
+              portable.status === "error"
+                ? "bg-red-50 text-red-700"
+                : "bg-gold-past text-black/70"
+            }`}
+            title={portable.error || portable.handleName}
+          >
+            <HardDrive className="w-3.5 h-3.5" />
+            {portable.status === "saving"
+              ? "Speichert…"
+              : portable.status === "error"
+                ? "Fehler"
+                : "Gespeichert"}
+          </span>
+        )}
         <button
           onClick={() => setSettingsOpen(true)}
           className="btn-ghost"

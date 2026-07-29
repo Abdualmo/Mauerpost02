@@ -3,6 +3,7 @@ import {
   ensureActiveCompany,
   getActiveCompanyId,
   getCompany,
+  onDataChange,
   resetAll,
   storageAvailable,
   updateCompany as sUpdateCompany,
@@ -17,9 +18,10 @@ export function AuthProvider({ children }) {
   );
 
   const refreshCompany = useCallback(() => {
-    const id = getActiveCompanyId();
-    if (id) setCompany(getCompany(id));
-  }, []);
+    if (!storageOk) return;
+    const c = ensureActiveCompany();
+    setCompany(c);
+  }, [storageOk]);
 
   // If the page comes back into focus, re-read the active company (in case
   // it was renamed elsewhere or storage changed).
@@ -29,6 +31,9 @@ export function AuthProvider({ children }) {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshCompany, storageOk]);
+
+  // React to external data changes (e.g. import from file).
+  useEffect(() => onDataChange(refreshCompany), [refreshCompany]);
 
   const value = {
     company,

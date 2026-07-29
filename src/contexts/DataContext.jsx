@@ -1,4 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useAuth } from "./AuthContext.jsx";
 import {
   createEmployee as sCreateEmployee,
@@ -7,6 +14,7 @@ import {
   deleteVacation as sDeleteVacation,
   getEmployees,
   getVacations,
+  onDataChange,
   updateEmployee as sUpdateEmployee,
   updateVacation as sUpdateVacation,
 } from "../lib/storage.js";
@@ -17,6 +25,8 @@ export function DataProvider({ children }) {
   const { company, updateCompany } = useAuth();
   const [tick, setTick] = useState(0);
   const bump = useCallback(() => setTick((n) => n + 1), []);
+
+  useEffect(() => onDataChange(bump), [bump]);
 
   const companyId = company?.id;
 
