@@ -28,6 +28,7 @@ export default function MonthCalendar({
   entries,
   draftStartISO,
   today,
+  birthdayISO,
   onDayClick,
 }) {
   const first = startOfMonth(monthDate);
@@ -58,6 +59,7 @@ export default function MonthCalendar({
           const isToday = today && isSameDay(day, parseISO(today));
           const entry = entryCoveringDay(entries, iso);
           const draft = draftStartISO && iso === draftStartISO;
+          const isBirthday = birthdayISO && iso === birthdayISO;
           const c = entry ? colorFor(entry.type) : null;
 
           const baseClasses = [
@@ -78,10 +80,21 @@ export default function MonthCalendar({
           if (draft) {
             baseClasses.push("ring-2 ring-[#C8A96B]");
           }
+          if (isBirthday && !entry) {
+            // Soft pink background when the birthday day is otherwise free
+            baseClasses.push("!bg-[#F7DDE3] text-black");
+          }
 
           const style = entry
             ? { backgroundColor: c.bg, color: c.fg }
             : undefined;
+
+          const title = [
+            entry?.notes || (entry ? undefined : undefined),
+            isBirthday ? "Geburtstag" : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ");
 
           return (
             <button
@@ -90,9 +103,18 @@ export default function MonthCalendar({
               onClick={() => onDayClick && onDayClick(iso, entry)}
               className={baseClasses.join(" ")}
               style={style}
-              title={entry ? entry.notes || undefined : undefined}
+              title={title || undefined}
             >
               {day.getDate()}
+              {isBirthday && (
+                <span
+                  className="absolute top-0.5 right-0.5 text-[10px] leading-none"
+                  aria-hidden
+                  title="Geburtstag"
+                >
+                  🎂
+                </span>
+              )}
             </button>
           );
         })}

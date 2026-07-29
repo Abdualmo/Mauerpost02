@@ -113,8 +113,12 @@ export function collectYearEntries({
 }) {
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year, 11, 31);
+  // Include the employee's own entries AND any company-wide entries
+  // (employeeId === null), e.g. one-off Betriebsurlaub for everyone.
   const own = vacations.filter((v) => {
-    if (v.employeeId !== employee.id) return false;
+    const belongsToEmployee = v.employeeId === employee.id;
+    const companyWide = v.employeeId === null || v.employeeId === undefined;
+    if (!belongsToEmployee && !companyWide) return false;
     const s = parseISO(v.startDate);
     const e = parseISO(v.endDate);
     return !(isAfter(s, yearEnd) || isBefore(e, yearStart));
@@ -232,6 +236,18 @@ export function entryCoveringDay(entries, dayISO) {
     const en = parseISO(e.endDate);
     return isWithinInterval(day, { start: s, end: en });
   }) || null;
+}
+
+// Given a birthDate ISO (any year) and a target year, return the ISO for that
+// birthday in the target year, or null if no valid birthDate.
+export function birthdayISO(birthDateISO, year) {
+  if (!birthDateISO) return null;
+  const parts = birthDateISO.split("-");
+  if (parts.length !== 3) return null;
+  const month = parts[1];
+  const day = parts[2];
+  if (!month || !day) return null;
+  return `${year}-${month}-${day}`;
 }
 
 // Is the employee absent today (any relevant entry)?

@@ -52,7 +52,7 @@ function DayPicker({ value, onChange }) {
 }
 
 export default function SettingsDialog({ onClose }) {
-  const { company, session } = useAuth();
+  const { company, resetAll } = useAuth();
   const { updateCompany } = useData();
   const [name, setName] = useState(company?.name || "");
   const [defaultVacationDays, setDefaults] = useState(
@@ -207,11 +207,26 @@ export default function SettingsDialog({ onClose }) {
             )}
           </div>
 
-          <div className="text-xs text-black/50 bg-gold-softer rounded-xl p-3">
-            Angemeldet als <span className="font-medium">{session?.fullName}</span>
-            {" "}
-            ({session?.email}){" · "}
-            {session?.role === "admin" ? "Admin" : "Mitarbeiter"}
+          <div className="text-xs text-black/60 bg-gold-softer rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="flex-1">
+              Alle Daten werden lokal in diesem Browser gespeichert.
+            </span>
+            <button
+              type="button"
+              className="btn-ghost !py-1.5 text-red-sick hover:bg-red-50 self-start sm:self-center"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Wirklich alle Daten (Firma, Mitarbeiter, Urlaube) löschen? Dies kann nicht rückgängig gemacht werden.",
+                  )
+                ) {
+                  resetAll();
+                  onClose();
+                }
+              }}
+            >
+              Alles zurücksetzen
+            </button>
           </div>
 
           {error && (

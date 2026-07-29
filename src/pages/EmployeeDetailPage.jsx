@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import {
+  birthdayISO as birthdayForYear,
   collectYearEntries,
   computeYearStats,
   entryCoveringDay,
@@ -169,6 +170,12 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
           <span className="w-3 h-3 rounded-sm bg-black/10" />
           Wochenende
         </span>
+        {employee.birthDate && (
+          <span className="inline-flex items-center gap-2">
+            <span className="w-3 h-3 rounded-sm" style={{ background: "#F7DDE3" }} />
+            Geburtstag 🎂
+          </span>
+        )}
       </div>
 
       <YearCalendar
@@ -176,6 +183,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
         entries={entries}
         draftStartISO={draftStart}
         today={today}
+        birthdayISO={birthdayForYear(employee.birthDate, year)}
         onDayClick={onDayClick}
       />
 

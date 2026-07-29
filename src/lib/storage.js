@@ -3,6 +3,18 @@ const K_COMPANIES = "vpg.companies";
 const K_EMPLOYEES = "vpg.employees";
 const K_VACATIONS = "vpg.vacations";
 const K_SESSION = "vpg.session";
+const K_ACTIVE_COMPANY = "vpg.activeCompany";
+
+export function storageAvailable() {
+  try {
+    const k = "__vpg_probe__";
+    localStorage.setItem(k, "1");
+    localStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function read(key) {
   try {
@@ -97,6 +109,55 @@ export function getSession() {
 export function setSession(session) {
   if (session) write(K_SESSION, session);
   else localStorage.removeItem(K_SESSION);
+}
+
+export function getActiveCompanyId() {
+  try {
+    return localStorage.getItem(K_ACTIVE_COMPANY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setActiveCompanyId(id) {
+  try {
+    if (id) localStorage.setItem(K_ACTIVE_COMPANY, id);
+    else localStorage.removeItem(K_ACTIVE_COMPANY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Ensures a company exists and is marked active. If nothing is stored yet,
+// a default company is auto-created so the app can be used without any login.
+export function ensureActiveCompany() {
+  const companies = getCompanies();
+  let activeId = getActiveCompanyId();
+  if (activeId && companies.some((c) => c.id === activeId)) {
+    return getCompany(activeId);
+  }
+  if (companies.length > 0) {
+    setActiveCompanyId(companies[0].id);
+    return companies[0];
+  }
+  const c = createCompany({ name: "Meine Firma" });
+  setActiveCompanyId(c.id);
+  return c;
+}
+
+export function resetAll() {
+  try {
+    [
+      K_USERS,
+      K_COMPANIES,
+      K_EMPLOYEES,
+      K_VACATIONS,
+      K_SESSION,
+      K_ACTIVE_COMPANY,
+    ].forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function getEmployees(companyId) {

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { CalendarDays, LogOut, Settings2 } from "lucide-react";
+import { CalendarDays, Settings2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import SettingsDialog from "./SettingsDialog.jsx";
 
 export default function AppHeader() {
-  const { company, logout, canManage, session } = useAuth();
+  const { company } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -21,22 +21,16 @@ export default function AppHeader() {
             {company?.name || "VacationPlanner Gold"}
           </div>
           <div className="text-xs text-black/50 truncate">
-            {session?.fullName}
-            {session?.role === "admin" ? " · Admin" : " · Mitarbeiter"}
+            Deine Daten bleiben in diesem Browser gespeichert
           </div>
         </div>
         <button
           onClick={() => setSettingsOpen(true)}
           className="btn-ghost"
           title="Einstellungen"
-          disabled={!canManage}
         >
           <Settings2 className="w-4 h-4" />
           <span className="hidden sm:inline">Einstellungen</span>
-        </button>
-        <button onClick={logout} className="btn-ghost" title="Abmelden">
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Abmelden</span>
         </button>
       </div>
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}

@@ -7,7 +7,6 @@ import {
   deleteVacation as sDeleteVacation,
   getEmployees,
   getVacations,
-  updateCompany,
   updateEmployee as sUpdateEmployee,
   updateVacation as sUpdateVacation,
 } from "../lib/storage.js";
@@ -15,18 +14,17 @@ import {
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
-  const { session, company, refreshCompany } = useAuth();
+  const { company, updateCompany } = useAuth();
   const [tick, setTick] = useState(0);
   const bump = useCallback(() => setTick((n) => n + 1), []);
 
-  const companyId = session?.companyId;
+  const companyId = company?.id;
 
   const employees = useMemo(() => {
     if (!companyId) return [];
     return getEmployees(companyId).sort((a, b) =>
       a.fullName.localeCompare(b.fullName, "de"),
     );
-    // tick invalidates cache
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, tick]);
 
@@ -75,9 +73,7 @@ export function DataProvider({ children }) {
       bump();
     },
     updateCompany(patch) {
-      if (!companyId) return null;
-      const c = updateCompany(companyId, patch);
-      refreshCompany();
+      const c = updateCompany(patch);
       bump();
       return c;
     },
