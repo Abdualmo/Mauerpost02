@@ -101,20 +101,22 @@ button {
   box-shadow: 0 4px 20px -6px rgba(0, 0, 0, 0.08);
 }
 
+/* Dialog backdrop is a simple vertically-scrollable container. The panel
+   sits inside with auto horizontal margin (centered) and a top margin
+   that grows to visually center the panel when it fits, but that safely
+   collapses to zero when content is taller than the viewport — so the
+   whole panel is always reachable by scrolling. */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 1rem;
-  padding-top: max(1rem, env(safe-area-inset-top));
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
   z-index: 50;
+  background: rgba(0, 0, 0, 0.35);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  padding: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 .dialog-panel {
@@ -123,13 +125,8 @@ button {
   box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.35);
   width: 100%;
   max-width: 32rem;
-  margin: auto;
-}
-
-@media (min-height: 640px) {
-  .dialog-backdrop {
-    align-items: center;
-  }
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
