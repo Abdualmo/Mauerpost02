@@ -12,6 +12,7 @@ import {
   createVacation as sCreateVacation,
   deleteEmployee as sDeleteEmployee,
   deleteVacation as sDeleteVacation,
+  getArchivedEmployees,
   getEmployees,
   getVacations,
   onDataChange,
@@ -38,6 +39,14 @@ export function DataProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, tick]);
 
+  const archivedEmployees = useMemo(() => {
+    if (!companyId) return [];
+    return getArchivedEmployees(companyId).sort((a, b) =>
+      a.fullName.localeCompare(b.fullName, "de"),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, tick]);
+
   const vacations = useMemo(() => {
     if (!companyId) return [];
     return getVacations(companyId);
@@ -46,8 +55,22 @@ export function DataProvider({ children }) {
 
   const api = {
     employees,
+    archivedEmployees,
     vacations,
     company,
+    archiveEmployee(id) {
+      if (!companyId) return;
+      sUpdateEmployee(id, companyId, {
+        archived: true,
+        archivedAt: new Date().toISOString(),
+      });
+      bump();
+    },
+    unarchiveEmployee(id) {
+      if (!companyId) return;
+      sUpdateEmployee(id, companyId, { archived: false, archivedAt: null });
+      bump();
+    },
     createEmployee(data) {
       if (!companyId) return null;
       const e = sCreateEmployee(companyId, data);

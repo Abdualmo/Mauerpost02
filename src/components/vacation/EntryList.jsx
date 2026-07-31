@@ -4,6 +4,7 @@ import {
   TYPE_KRANKHEIT,
   TYPE_URLAUB,
   countWorkdaysInYear,
+  halfDayAdjustment,
 } from "../../lib/vacation.js";
 import { fmtDate } from "../../lib/date.js";
 
@@ -29,8 +30,13 @@ export default function EntryList({ entries, year, canManage, onDelete }) {
       <ul className="divide-y divide-black/5">
         {sorted.map((e) => {
           const m = meta[e.type] || { color: "#999", label: e.type };
-          const days = countWorkdaysInYear(e.startDate, e.endDate, year);
+          const baseDays = countWorkdaysInYear(e.startDate, e.endDate, year);
+          const days =
+            e.type === TYPE_URLAUB
+              ? Math.max(0, baseDays + halfDayAdjustment(e, year))
+              : baseDays;
           const isRecurring = Boolean(e.recurring);
+          const isHalf = e.halfDayStart || e.halfDayEnd;
           return (
             <li
               key={e.id}
@@ -50,6 +56,7 @@ export default function EntryList({ entries, year, canManage, onDelete }) {
                 </div>
                 <div className="text-xs text-black/50 truncate">
                   {days} Arbeitstag{days === 1 ? "" : "e"}
+                  {isHalf ? " · Halbtag" : ""}
                   {e.notes ? ` · ${e.notes}` : ""}
                   {isRecurring ? " · wiederkehrend" : ""}
                 </div>

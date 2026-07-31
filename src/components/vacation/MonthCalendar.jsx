@@ -11,7 +11,14 @@ import {
   endOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { entryCoveringDay, TYPE_BETRIEBSURLAUB, TYPE_KRANKHEIT, TYPE_URLAUB } from "../../lib/vacation.js";
+import {
+  entryCoveringDay,
+  isHalfDayFor,
+  holidayName,
+  TYPE_BETRIEBSURLAUB,
+  TYPE_KRANKHEIT,
+  TYPE_URLAUB,
+} from "../../lib/vacation.js";
 import { toISO } from "../../lib/date.js";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -22,6 +29,8 @@ const colorFor = (type) => {
   if (type === TYPE_KRANKHEIT) return { bg: "#D64545", fg: "#FFFFFF" };
   return { bg: "transparent", fg: "#000000" };
 };
+
+const HOLIDAY_BG = "#EDE4D3";
 
 export default function MonthCalendar({
   monthDate,
@@ -60,13 +69,15 @@ export default function MonthCalendar({
           const entry = entryCoveringDay(entries, iso);
           const draft = draftStartISO && iso === draftStartISO;
           const isBirthday = birthdayISO && iso === birthdayISO;
+          const holiday = holidayName(iso);
+          const halfDay = entry ? isHalfDayFor(entry, iso) : false;
           const c = entry ? colorFor(entry.type) : null;
 
           const baseClasses = [
-            "h-9 sm:h-10 rounded-lg text-sm relative flex items-center justify-center transition-colors",
+            "h-9 sm:h-10 rounded-lg text-sm relative flex items-center justify-center transition-colors overflow-hidden",
             inMonth ? "" : "opacity-30",
           ];
-          if (!entry && !weekend && inMonth) {
+          if (!entry && !weekend && !holiday && inMonth) {
             baseClasses.push("hover:bg-[#F2EBDD] cursor-pointer");
           } else if (entry && inMonth) {
             baseClasses.push("cursor-pointer");
@@ -81,17 +92,30 @@ export default function MonthCalendar({
             baseClasses.push("ring-2 ring-[#C8A96B]");
           }
           if (isBirthday && !entry) {
-            // Soft pink background when the birthday day is otherwise free
             baseClasses.push("!bg-[#F7DDE3] text-black");
           }
 
-          const style = entry
-            ? { backgroundColor: c.bg, color: c.fg }
-            : undefined;
+          let style;
+          if (entry) {
+            if (halfDay) {
+              // Diagonal split: half vacation color, half transparent white so
+              // the underlying free-day surface shows through.
+              style = {
+                background: `linear-gradient(135deg, ${c.bg} 50%, rgba(255,255,255,0.85) 50%)`,
+                color: c.fg,
+              };
+            } else {
+              style = { backgroundColor: c.bg, color: c.fg };
+            }
+          } else if (holiday && !isBirthday) {
+            style = { backgroundColor: HOLIDAY_BG, color: "#4a3d1f" };
+          }
 
           const title = [
-            entry?.notes || (entry ? undefined : undefined),
+            entry?.notes,
+            holiday || undefined,
             isBirthday ? "Geburtstag" : undefined,
+            halfDay ? "Halbtag" : undefined,
           ]
             .filter(Boolean)
             .join(" · ");
@@ -113,6 +137,22 @@ export default function MonthCalendar({
                   title="Geburtstag"
                 >
                   🎂
+                </span>
+              )}
+              {holiday && !entry && (
+                <span
+                  className="absolute bottom-0.5 left-1 text-[9px] leading-none text-black/50 truncate"
+                  style={{ maxWidth: "80%" }}
+                >
+                  ·
+                </span>
+              )}
+              {halfDay && (
+                <span
+                  className="absolute bottom-0.5 right-1 text-[10px] leading-none font-semibold"
+                  aria-hidden
+                >
+                  ½
                 </span>
               )}
             </button>

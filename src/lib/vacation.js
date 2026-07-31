@@ -6,8 +6,73 @@ import {
   isAfter,
   isBefore,
   startOfDay,
+  addDays,
+  subDays,
 } from "date-fns";
 import { toISO } from "./date.js";
+
+// Compute Easter Sunday for a given year using the Meeus/Butcher algorithm.
+export function easterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+// German nationwide statutory public holidays (all 16 Bundesländer).
+// Movable holidays are derived from Easter each year.
+export function getGermanHolidays(year) {
+  const easter = easterSunday(year);
+  const list = [
+    { date: new Date(year, 0, 1), name: "Neujahr" },
+    { date: subDays(easter, 2), name: "Karfreitag" },
+    { date: addDays(easter, 1), name: "Ostermontag" },
+    { date: new Date(year, 4, 1), name: "Tag der Arbeit" },
+    { date: addDays(easter, 39), name: "Christi Himmelfahrt" },
+    { date: addDays(easter, 50), name: "Pfingstmontag" },
+    { date: new Date(year, 9, 3), name: "Tag der Deutschen Einheit" },
+    { date: new Date(year, 11, 25), name: "1. Weihnachtstag" },
+    { date: new Date(year, 11, 26), name: "2. Weihnachtstag" },
+  ];
+  return list.map(({ date, name }) => ({ iso: toISO(date), name, date }));
+}
+
+const holidayCache = new Map();
+export function getHolidayMap(year) {
+  if (!holidayCache.has(year)) {
+    const m = new Map();
+    getGermanHolidays(year).forEach((h) => m.set(h.iso, h.name));
+    holidayCache.set(year, m);
+  }
+  return holidayCache.get(year);
+}
+
+export function holidayName(dayISO) {
+  const year = Number(dayISO.slice(0, 4));
+  return getHolidayMap(year).get(dayISO) || null;
+}
+
+// A calendar-workday is Mon-Fri and not a public holiday.
+export function isHolidayISO(dayISO) {
+  return getHolidayMap(Number(dayISO.slice(0, 4))).has(dayISO);
+}
+
+export function isWorkdayISO(dayISO) {
+  const d = parseISO(dayISO);
+  if (isWeekend(d)) return false;
+  return !isHolidayISO(dayISO);
+}
 
 export const TYPE_URLAUB = "urlaub";
 export const TYPE_KRANKHEIT = "krankheit";
@@ -41,7 +106,8 @@ export function isProrated(employee, year) {
 }
 
 export function isWorkday(date) {
-  return !isWeekend(date);
+  if (isWeekend(date)) return false;
+  return !isHolidayISO(toISO(date));
 }
 
 export function countWorkdays(startISO, endISO) {
@@ -75,6 +141,40 @@ export function countWorkdaysInRange(startISO, endISO, rangeStart, rangeEnd) {
   return eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(
     isWorkday,
   ).length;
+}
+
+// Half-day helper. An entry with halfDayStart/halfDayEnd reduces its
+// workday count by 0.5 for the first/last day, provided those days are
+// actual workdays (Mon-Fri and not a holiday).
+export function halfDayAdjustment(entry, year) {
+  if (!entry || (!entry.halfDayStart && !entry.halfDayEnd)) return 0;
+  const singleDay = entry.startDate === entry.endDate;
+  const startYear = Number(entry.startDate.slice(0, 4));
+  const endYear = Number(entry.endDate.slice(0, 4));
+  const startInYear = startYear === year;
+  const endInYear = endYear === year;
+  const startIsWd = isWorkdayISO(entry.startDate);
+  const endIsWd = isWorkdayISO(entry.endDate);
+  if (singleDay) {
+    if ((entry.halfDayStart || entry.halfDayEnd) && startInYear && startIsWd) return -0.5;
+    return 0;
+  }
+  let adj = 0;
+  if (entry.halfDayStart && startInYear && startIsWd) adj -= 0.5;
+  if (entry.halfDayEnd && endInYear && endIsWd) adj -= 0.5;
+  return adj;
+}
+
+// Is the given day represented as a half-day within an entry?
+export function isHalfDayFor(entry, dayISO) {
+  if (!entry) return false;
+  if (!entry.halfDayStart && !entry.halfDayEnd) return false;
+  if (entry.startDate === entry.endDate) {
+    return Boolean(entry.halfDayStart || entry.halfDayEnd);
+  }
+  if (entry.halfDayStart && dayISO === entry.startDate) return true;
+  if (entry.halfDayEnd && dayISO === entry.endDate) return true;
+  return false;
 }
 
 // Materializes recurring company vacations for a given year.
@@ -160,11 +260,17 @@ export function collectYearEntries({
   return [...own, ...mat];
 }
 
-// Sum urlaub workdays taken in a given calendar year (by employee)
+// Sum urlaub workdays taken in a given calendar year (by employee),
+// respecting half-day flags.
 export function urlaubWorkdaysInYear(vacations, employeeId, year) {
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_URLAUB)
-    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
+    .reduce(
+      (sum, v) =>
+        sum +
+        Math.max(0, countWorkdaysInYear(v.startDate, v.endDate, year) + halfDayAdjustment(v, year)),
+      0,
+    );
 }
 
 // Urlaub workdays taken between Jan 1 and Mar 31 of a given year
@@ -173,11 +279,28 @@ export function urlaubWorkdaysInQ1(vacations, employeeId, year) {
   const q1End = new Date(year, 2, 31);
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_URLAUB)
-    .reduce(
-      (sum, v) =>
-        sum + countWorkdaysInRange(v.startDate, v.endDate, q1Start, q1End),
-      0,
-    );
+    .reduce((sum, v) => {
+      const base = countWorkdaysInRange(v.startDate, v.endDate, q1Start, q1End);
+      // If a half-day falls in Q1, deduct 0.5.
+      let adj = 0;
+      const singleDay = v.startDate === v.endDate;
+      const inQ1 = (iso) => iso >= toISO(q1Start) && iso <= toISO(q1End);
+      if (singleDay) {
+        if ((v.halfDayStart || v.halfDayEnd) && inQ1(v.startDate) && isWorkdayISO(v.startDate))
+          adj -= 0.5;
+      } else {
+        if (v.halfDayStart && inQ1(v.startDate) && isWorkdayISO(v.startDate)) adj -= 0.5;
+        if (v.halfDayEnd && inQ1(v.endDate) && isWorkdayISO(v.endDate)) adj -= 0.5;
+      }
+      return sum + Math.max(0, base + adj);
+    }, 0);
+}
+
+// Total sick workdays in a given calendar year for an employee.
+export function sickWorkdaysInYear(vacations, employeeId, year) {
+  return vacations
+    .filter((v) => v.employeeId === employeeId && v.type === TYPE_KRANKHEIT)
+    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
 }
 
 // Compute the leftover from the previous year (workdays unused).
@@ -236,11 +359,14 @@ export function computeYearStats({ employee, vacations, year, today }) {
   const usedQ1 = urlaubWorkdaysInQ1(vacations, employee.id, year);
   const usedAgainstCarryover = Math.min(available, usedQ1);
   const usedAgainstAnnual = Math.max(0, usedTotal - usedAgainstCarryover);
-  const remaining = Math.max(0, annual - usedAgainstAnnual);
+  // Remaining CAN go negative when the employee has booked more than they
+  // are entitled to; the UI highlights this state.
+  const remaining = annual - usedAgainstAnnual;
   const carryoverRemaining = Math.max(0, available - usedAgainstCarryover);
   const expired = !isCarryoverAvailable(year, today || new Date())
     ? carryoverTotal
     : 0;
+  const sickTotal = sickWorkdaysInYear(vacations, employee.id, year);
   return {
     annual,
     annualFull,
@@ -252,6 +378,8 @@ export function computeYearStats({ employee, vacations, year, today }) {
     usedTotal,
     usedAgainstAnnual,
     remaining,
+    sickTotal,
+    negative: remaining < 0,
   };
 }
 
@@ -275,6 +403,14 @@ export function birthdayISO(birthDateISO, year) {
   const day = parts[2];
   if (!month || !day) return null;
   return `${year}-${month}-${day}`;
+}
+
+// Is the probation ending within the next 30 days (and not yet past)?
+export function isProbationEndingSoon(employee, today = new Date()) {
+  if (!employee?.probationEnd) return false;
+  const end = parseISO(employee.probationEnd);
+  const windowStart = subDays(end, 30);
+  return isWithinInterval(today, { start: windowStart, end });
 }
 
 // From Nov 1 of the current year, warn when more than 10 remaining days.

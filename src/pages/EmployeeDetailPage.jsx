@@ -8,6 +8,7 @@ import {
   collectYearEntries,
   computeYearStats,
   entryCoveringDay,
+  isProbationEndingSoon,
 } from "../lib/vacation.js";
 import { fmtDate, todayISO } from "../lib/date.js";
 import SummaryCards from "../components/vacation/SummaryCards.jsx";
@@ -113,12 +114,26 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
               {employee.fullName}
             </div>
             <div className="text-sm text-black/60 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+              {employee.employmentType && (
+                <span className="capitalize">{employee.employmentType}</span>
+              )}
               <span>{employee.weeklyHours} h/Woche</span>
               {employee.hireDate && (
                 <span>Eintritt: {fmtDate(employee.hireDate)}</span>
               )}
               {employee.birthDate && (
                 <span>Geburtstag: {fmtDate(employee.birthDate)}</span>
+              )}
+              {employee.probationEnd && (
+                <span
+                  className={
+                    isProbationEndingSoon(employee)
+                      ? "text-black/80 font-medium"
+                      : ""
+                  }
+                >
+                  Probezeit bis {fmtDate(employee.probationEnd)}
+                </span>
               )}
               <span>Heute: {fmtDate(today)}</span>
             </div>
@@ -171,6 +186,17 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
         <span className="inline-flex items-center gap-2">
           <span className="w-3 h-3 rounded-sm bg-black/10" />
           Wochenende
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="w-3 h-3 rounded-sm" style={{ background: "#EDE4D3" }} />
+          Feiertag
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span
+            className="w-3 h-3 rounded-sm"
+            style={{ background: "linear-gradient(135deg, #C8A96B 50%, rgba(255,255,255,0.85) 50%)" }}
+          />
+          Halbtag ½
         </span>
         {employee.birthDate && (
           <span className="inline-flex items-center gap-2">
@@ -234,6 +260,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
           employee={employee}
           onClose={() => setEditEmp(false)}
           onDeleted={onBack}
+          onArchived={onBack}
         />
       )}
     </div>

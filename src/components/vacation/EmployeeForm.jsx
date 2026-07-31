@@ -1,15 +1,25 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Archive, ArchiveRestore } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
 import { useConfirm } from "../../contexts/ConfirmContext.jsx";
+
+const EMPLOYMENT_TYPES = [
+  { value: "", label: "— keine Angabe —" },
+  { value: "vollzeit", label: "Vollzeit" },
+  { value: "teilzeit", label: "Teilzeit" },
+  { value: "minijob", label: "Minijob" },
+  { value: "sonstige", label: "Sonstige" },
+];
 
 export default function EmployeeForm({
   employee,
   defaultVacationDays = 30,
   onClose,
   onDeleted,
+  onArchived,
 }) {
-  const { createEmployee, updateEmployee, deleteEmployee } = useData();
+  const { createEmployee, updateEmployee, deleteEmployee, archiveEmployee, unarchiveEmployee } =
+    useData();
   const confirm = useConfirm();
   const isEdit = Boolean(employee);
 
@@ -20,6 +30,9 @@ export default function EmployeeForm({
   const [weeklyHours, setWeekly] = useState(employee?.weeklyHours ?? 40);
   const [hireDate, setHireDate] = useState(employee?.hireDate || "");
   const [birthDate, setBirthDate] = useState(employee?.birthDate || "");
+  const [probationStart, setProbStart] = useState(employee?.probationStart || "");
+  const [probationEnd, setProbEnd] = useState(employee?.probationEnd || "");
+  const [employmentType, setEmploymentType] = useState(employee?.employmentType || "");
   const [role, setRole] = useState(employee?.role || "employee");
   const [userId, setUserId] = useState(employee?.userId || "");
   const [error, setError] = useState("");
@@ -32,12 +45,17 @@ export default function EmployeeForm({
     const num = Number(yearlyVacationDays);
     if (Number.isNaN(num) || num < 0)
       return setError("Urlaubstage müssen eine positive Zahl sein.");
+    if (probationStart && probationEnd && probationEnd < probationStart)
+      return setError("Probezeit-Ende darf nicht vor dem Start liegen.");
     const data = {
       fullName,
       yearlyVacationDays: num,
       weeklyHours: Number(weeklyHours) || 0,
       hireDate,
       birthDate,
+      probationStart,
+      probationEnd,
+      employmentType,
       role,
       userId,
     };
@@ -60,6 +78,25 @@ export default function EmployeeForm({
     onDeleted && onDeleted();
   }
 
+  async function toggleArchive() {
+    if (!isEdit) return;
+    if (employee.archived) {
+      unarchiveEmployee(employee.id);
+      onClose();
+      return;
+    }
+    const ok = await confirm({
+      title: "Mitarbeiter archivieren?",
+      message: `„${employee.fullName}" wird aus der aktiven Übersicht ausgeblendet. Alle Daten bleiben erhalten und können jederzeit wiederhergestellt werden.`,
+      confirmLabel: "Archivieren",
+      danger: false,
+    });
+    if (!ok) return;
+    archiveEmployee(employee.id);
+    onClose();
+    onArchived && onArchived();
+  }
+
   return (
     <div className="dialog-backdrop" onMouseDown={onClose}>
       <div className="dialog-panel p-5 sm:p-6" onMouseDown={(e) => e.stopPropagation()}>
@@ -70,6 +107,11 @@ export default function EmployeeForm({
             </div>
             <div className="font-semibold text-lg">
               {isEdit ? employee.fullName : "Neuen Mitarbeiter anlegen"}
+              {isEdit && employee.archived && (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-black/10 text-black/60 align-middle">
+                  archiviert
+                </span>
+              )}
             </div>
           </div>
           <button className="btn-ghost !p-2" onClick={onClose}>
@@ -129,6 +171,48 @@ export default function EmployeeForm({
               />
             </div>
           </div>
+
+          <div>
+            <label className="label">Arbeitszeitmodell (optional)</label>
+            <select
+              className="input"
+              value={employmentType}
+              onChange={(e) => setEmploymentType(e.target.value)}
+            >
+              {EMPLOYMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <fieldset className="border border-black/10 rounded-xl px-3 pt-2 pb-3">
+            <legend className="text-xs text-black/50 px-1">
+              Probezeit (optional)
+            </legend>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Von</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={probationStart}
+                  onChange={(e) => setProbStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">Bis</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={probationEnd}
+                  onChange={(e) => setProbEnd(e.target.value)}
+                />
+              </div>
+            </div>
+          </fieldset>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Rolle</label>
@@ -159,13 +243,28 @@ export default function EmployeeForm({
           )}
 
           <div className="pt-2 flex items-center justify-between gap-2 flex-wrap">
-            {isEdit ? (
-              <button type="button" className="btn-danger" onClick={remove}>
-                Löschen
-              </button>
-            ) : (
-              <span />
-            )}
+            <div className="flex gap-2 flex-wrap">
+              {isEdit && (
+                <button type="button" className="btn-ghost bg-black/[0.03]" onClick={toggleArchive}>
+                  {employee.archived ? (
+                    <>
+                      <ArchiveRestore className="w-4 h-4" />
+                      Wiederherstellen
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="w-4 h-4" />
+                      Archivieren
+                    </>
+                  )}
+                </button>
+              )}
+              {isEdit && (
+                <button type="button" className="btn-danger" onClick={remove}>
+                  Löschen
+                </button>
+              )}
+            </div>
             <div className="flex gap-2 ml-auto">
               <button type="button" className="btn-ghost" onClick={onClose}>
                 Abbrechen

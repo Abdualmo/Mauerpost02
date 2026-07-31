@@ -1,19 +1,28 @@
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { useConfirm } from "../../contexts/ConfirmContext.jsx";
 import {
   computeYearStats,
   isAbsentOn,
+  isProbationEndingSoon,
   shouldWarnHighCarryover,
 } from "../../lib/vacation.js";
+import { fmtDate } from "../../lib/date.js";
 import { ackWarning, isWarningAcked } from "../../lib/storage.js";
 import { todayISO } from "../../lib/date.js";
 import UsedVacationPopover from "./UsedVacationPopover.jsx";
 import SwipeableRow from "./SwipeableRow.jsx";
 
-function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
+const EMPLOYMENT_LABEL = {
+  vollzeit: "Vollzeit",
+  teilzeit: "Teilzeit",
+  minijob: "Minijob",
+  sonstige: "Sonstige",
+};
+
+function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen, archived = false }) {
   const { vacations, company } = useData();
   const stats = computeYearStats({ employee: emp, vacations, year });
   const absent = isAbsentOn({
@@ -28,18 +37,21 @@ function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
       remaining: stats.remaining,
       viewYear: year,
     }) && !isWarningAcked(emp.id, year);
+  const probationSoon = isProbationEndingSoon(emp);
+  const negative = stats.negative;
+
+  const bgClass = negative
+    ? "bg-red-50"
+    : absent
+      ? "bg-gold-absent"
+      : "hover:bg-gold-softest";
+  const borderColor = negative ? "#D64545" : absent ? "#C8A96B" : "transparent";
 
   return (
     <div
       onClick={() => onOpen(emp.id)}
-      className={`grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-3 text-sm cursor-pointer transition-colors ${
-        absent ? "bg-gold-absent" : "hover:bg-gold-softest"
-      }`}
-      style={
-        absent
-          ? { borderLeft: "3px solid #C8A96B" }
-          : { borderLeft: "3px solid transparent" }
-      }
+      className={`grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center px-3 sm:px-4 py-3 text-sm cursor-pointer transition-colors ${bgClass}`}
+      style={{ borderLeft: `3px solid ${borderColor}` }}
     >
       {/* Name + hints */}
       <div className="min-w-0">
@@ -48,6 +60,17 @@ function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
           {absent && (
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-gold text-black font-medium">
               im Urlaub
+            </span>
+          )}
+          {negative && (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-red-sick text-white font-medium">
+              <AlertTriangle className="w-3 h-3" />
+              negativ ({stats.remaining})
+            </span>
+          )}
+          {archived && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/10 text-black/60">
+              archiviert
             </span>
           )}
           {warn && (
@@ -64,11 +87,26 @@ function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
               {stats.remaining} Resttage
             </button>
           )}
+          {probationSoon && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-[#F0DDB4] text-black/80 font-medium"
+              title={`Probezeit endet am ${fmtDate(emp.probationEnd)}`}
+            >
+              <ShieldCheck className="w-3 h-3" />
+              Probezeit endet {fmtDate(emp.probationEnd)}
+            </span>
+          )}
         </div>
         <div className="text-xs text-black/50 truncate">
+          {emp.employmentType && (
+            <>{EMPLOYMENT_LABEL[emp.employmentType] || emp.employmentType} · </>
+          )}
           {emp.weeklyHours} h/Woche
           {stats.prorated && (
             <> · anteilig {stats.annual} / {stats.annualFull} Tage</>
+          )}
+          {stats.sickTotal > 0 && (
+            <> · {stats.sickTotal} Krankheitstage</>
           )}
         </div>
       </div>
@@ -95,7 +133,9 @@ function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
         )}
       </div>
 
-      <div className="text-right tabular-nums w-16 font-medium">
+      <div
+        className={`text-right tabular-nums w-16 font-medium ${negative ? "text-red-sick" : ""}`}
+      >
         {stats.remaining}
       </div>
 
@@ -125,15 +165,13 @@ function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen }) {
   );
 }
 
-export default function EmployeeTable({ employees, year, onOpen }) {
+export default function EmployeeTable({ employees, year, onOpen, archive = false }) {
   const { canManage } = useAuth();
-  const { deleteEmployee } = useData();
+  const { deleteEmployee, unarchiveEmployee } = useData();
   const confirm = useConfirm();
   const [popover, setPopover] = useState(null);
   const today = todayISO();
 
-  // Returns true when actually deleted, false if user cancelled — the
-  // SwipeableRow uses this to spring back on cancel.
   async function askAndDelete(emp) {
     if (!canManage) return false;
     const ok = await confirm({
@@ -150,11 +188,17 @@ export default function EmployeeTable({ employees, year, onOpen }) {
   if (employees.length === 0) {
     return (
       <div className="card p-8 text-center text-black/60">
-        Noch keine Mitarbeiter angelegt.
-        {canManage && (
-          <div className="mt-2 text-sm">
-            Lege oben deinen ersten Mitarbeiter an.
-          </div>
+        {archive ? (
+          <>Keine archivierten Mitarbeiter.</>
+        ) : (
+          <>
+            Noch keine Mitarbeiter angelegt.
+            {canManage && (
+              <div className="mt-2 text-sm">
+                Lege oben deinen ersten Mitarbeiter an.
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -172,8 +216,8 @@ export default function EmployeeTable({ employees, year, onOpen }) {
 
       <ul className="divide-y divide-black/5">
         {employees.map((emp) => (
-          <li key={emp.id}>
-            {canManage ? (
+          <li key={emp.id} className="relative">
+            {canManage && !archive ? (
               <SwipeableRow onDelete={() => askAndDelete(emp)}>
                 <EmployeeRow
                   emp={emp}
@@ -185,20 +229,37 @@ export default function EmployeeTable({ employees, year, onOpen }) {
                 />
               </SwipeableRow>
             ) : (
-              <EmployeeRow
-                emp={emp}
-                year={year}
-                today={today}
-                onOpen={onOpen}
-                onPopover={setPopover}
-                popoverOpen={popover === emp.id}
-              />
+              <div className="flex items-center gap-2 pr-3">
+                <div className="flex-1">
+                  <EmployeeRow
+                    emp={emp}
+                    year={year}
+                    today={today}
+                    onOpen={onOpen}
+                    onPopover={setPopover}
+                    popoverOpen={popover === emp.id}
+                    archived={archive}
+                  />
+                </div>
+                {archive && canManage && (
+                  <button
+                    className="btn-ghost bg-white shadow-soft !py-1.5 shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      unarchiveEmployee(emp.id);
+                    }}
+                    title="Wiederherstellen"
+                  >
+                    Wiederherstellen
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}
       </ul>
 
-      {canManage && (
+      {canManage && !archive && (
         <div className="text-[11px] text-black/40 px-3 sm:px-4 py-2 border-t border-black/5">
           Tipp: Zeile nach links wischen, um zu löschen.
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
 import {
@@ -8,7 +8,7 @@ import {
 } from "../../lib/vacation.js";
 
 export default function TimeOffForm({
-  mode = "employee", // 'employee' | 'company'
+  mode = "employee",
   employeeId,
   initialStart,
   initialEnd,
@@ -21,11 +21,24 @@ export default function TimeOffForm({
     mode === "company" ? TYPE_BETRIEBSURLAUB : TYPE_URLAUB,
   );
   const [notes, setNotes] = useState("");
+  const [halfDayStart, setHalfDayStart] = useState(false);
+  const [halfDayEnd, setHalfDayEnd] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (mode === "company") setType(TYPE_BETRIEBSURLAUB);
   }, [mode]);
+
+  const singleDay = startDate && endDate && startDate === endDate;
+  const showHalfDayOptions = mode !== "company" && type === TYPE_URLAUB && startDate && endDate;
+
+  // Reset half-day flags whenever the range or type changes to a non-eligible state
+  useEffect(() => {
+    if (!showHalfDayOptions) {
+      setHalfDayStart(false);
+      setHalfDayEnd(false);
+    }
+  }, [showHalfDayOptions]);
 
   function submit(e) {
     e.preventDefault();
@@ -38,14 +51,14 @@ export default function TimeOffForm({
       endDate,
       type,
       notes,
+      halfDayStart: showHalfDayOptions && halfDayStart,
+      halfDayEnd: showHalfDayOptions && !singleDay && halfDayEnd,
     });
     onClose();
   }
 
   const title =
-    mode === "company"
-      ? "Betriebsurlaub eintragen"
-      : "Abwesenheit eintragen";
+    mode === "company" ? "Betriebsurlaub eintragen" : "Abwesenheit eintragen";
 
   return (
     <div className="dialog-backdrop" onMouseDown={onClose}>
@@ -113,6 +126,43 @@ export default function TimeOffForm({
                 </button>
               </div>
             </div>
+          )}
+
+          {showHalfDayOptions && (
+            <fieldset className="border border-black/10 rounded-xl px-3 pt-2 pb-3">
+              <legend className="text-xs text-black/50 px-1">
+                Halbtagsurlaub (optional)
+              </legend>
+              {singleDay ? (
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={halfDayStart}
+                    onChange={(e) => setHalfDayStart(e.target.checked)}
+                  />
+                  Dieser Tag zählt als halber Urlaubstag (0,5)
+                </label>
+              ) : (
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={halfDayStart}
+                      onChange={(e) => setHalfDayStart(e.target.checked)}
+                    />
+                    Erster Tag ist ein halber Tag
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={halfDayEnd}
+                      onChange={(e) => setHalfDayEnd(e.target.checked)}
+                    />
+                    Letzter Tag ist ein halber Tag
+                  </label>
+                </div>
+              )}
+            </fieldset>
           )}
 
           <div>

@@ -232,8 +232,14 @@ export function ackWarning(employeeId, year) {
   notify();
 }
 
-export function getEmployees(companyId) {
-  return read(K_EMPLOYEES).filter((e) => e.companyId === companyId);
+export function getEmployees(companyId, { includeArchived = false } = {}) {
+  return read(K_EMPLOYEES).filter(
+    (e) => e.companyId === companyId && (includeArchived || !e.archived),
+  );
+}
+
+export function getArchivedEmployees(companyId) {
+  return read(K_EMPLOYEES).filter((e) => e.companyId === companyId && e.archived);
 }
 
 export function getEmployee(id, companyId) {
@@ -253,8 +259,13 @@ export function createEmployee(companyId, data) {
     weeklyHours: Number(data.weeklyHours) || 0,
     hireDate: data.hireDate,
     birthDate: data.birthDate || "",
+    probationStart: data.probationStart || "",
+    probationEnd: data.probationEnd || "",
+    employmentType: data.employmentType || "",
     role: data.role || "employee",
     userId: data.userId || "",
+    archived: false,
+    archivedAt: null,
     createdAt: new Date().toISOString(),
   };
   all.push(emp);
@@ -300,6 +311,8 @@ export function createVacation(companyId, data) {
     endDate: data.endDate,
     type: data.type,
     notes: data.notes || "",
+    halfDayStart: Boolean(data.halfDayStart),
+    halfDayEnd: Boolean(data.halfDayEnd),
     createdAt: new Date().toISOString(),
   };
   all.push(vac);

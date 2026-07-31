@@ -1,20 +1,22 @@
-import { CalendarCheck, Clock3, Palmtree, CalendarClock } from "lucide-react";
+import { CalendarCheck, Clock3, Palmtree, CalendarClock, Thermometer } from "lucide-react";
 
-function Card({ icon: Icon, label, value, hint, tint = "#F7F3ED" }) {
+function Card({ icon: Icon, label, value, hint, tint = "#F7F3ED", iconColor = "#A68445", danger = false }) {
   return (
-    <div className="card p-4 sm:p-5">
+    <div className={`card p-4 sm:p-5 ${danger ? "ring-1 ring-red-sick/40" : ""}`}>
       <div className="flex items-center gap-3">
         <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
+          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ backgroundColor: tint }}
         >
-          <Icon className="w-5 h-5" style={{ color: "#A68445" }} />
+          <Icon className="w-5 h-5" style={{ color: iconColor }} />
         </div>
         <div className="min-w-0">
           <div className="text-xs uppercase tracking-wide text-black/50">
             {label}
           </div>
-          <div className="text-2xl font-semibold tabular-nums leading-tight">
+          <div
+            className={`text-2xl font-semibold tabular-nums leading-tight ${danger ? "text-red-sick" : ""}`}
+          >
             {value}
           </div>
           {hint && (
@@ -33,7 +35,7 @@ export default function SummaryCards({ stats, year }) {
       : `nutzbar bis 31.03.${year}`
     : "kein Übertrag";
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
       <Card
         icon={CalendarCheck}
         label="Jahresanspruch"
@@ -50,6 +52,8 @@ export default function SummaryCards({ stats, year }) {
         icon={Palmtree}
         label="Verbleibend"
         value={stats.remaining}
+        danger={stats.negative}
+        hint={stats.negative ? "negative Bilanz" : undefined}
       />
       <Card
         icon={CalendarClock}
@@ -60,6 +64,14 @@ export default function SummaryCards({ stats, year }) {
             : stats.carryoverTotal || 0
         }
         hint={carryoverHint}
+      />
+      <Card
+        icon={Thermometer}
+        label="Krankheit"
+        value={stats.sickTotal}
+        hint={`Krankheitstage ${year}`}
+        tint="#FBE0E0"
+        iconColor="#D64545"
       />
     </div>
   );
