@@ -1,10 +1,13 @@
-import { CalendarDays, HardDrive } from "lucide-react";
+import { useState } from "react";
+import { CalendarDays, HardDrive, Settings } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { usePortable } from "../../contexts/PortableContext.jsx";
+import SettingsPanel from "./SettingsPanel.jsx";
 
 export default function AppHeader() {
   const { company } = useAuth();
   const portable = usePortable();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <header className="bg-white/70 backdrop-blur border-b border-black/5 sticky top-0 z-20">
@@ -42,7 +45,18 @@ export default function AppHeader() {
                 : "Gespeichert"}
           </span>
         )}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="btn-ghost"
+          title="Einstellungen"
+        >
+          <Settings className="w-4 h-4" />
+          <span className="hidden sm:inline">Einstellungen</span>
+        </button>
       </div>
+      {settingsOpen && (
+        <SettingsPanel onClose={() => setSettingsOpen(false)} />
+      )}
     </header>
   );
 }
