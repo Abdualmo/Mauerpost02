@@ -114,8 +114,9 @@ export default function EntryActionDialog({ entry, dayISO, onClose }) {
 
         {isRecurring ? (
           <div className="text-sm text-black/60 bg-gold-softer rounded-xl p-3">
-            Dies ist ein wiederkehrender Betriebsurlaub. Er kann hier nicht
-            bearbeitet oder gelöscht werden — verwalte ihn in den Einstellungen.
+            Dies ist ein wiederkehrender Betriebsurlaub. Er wird jedes Jahr
+            automatisch übernommen und kann hier nicht bearbeitet oder gelöscht
+            werden.
           </div>
         ) : (
           <>
