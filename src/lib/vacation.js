@@ -260,6 +260,37 @@ export function collectYearEntries({
   return [...own, ...mat];
 }
 
+// A Betriebsurlaub only counts against the employee's allowance once its
+// first day has actually arrived. Until then it sits in the system without
+// any effect, no matter how far in the future it is entered. Once the first
+// day is reached, it is recognized only if the employee was already
+// employed by then (hireDate <= start) and had not already exited
+// (exitDate, if set, must not be before start).
+export function isBetriebsurlaubRecognized(employee, entry, today = new Date()) {
+  if (!entry || entry.type !== TYPE_BETRIEBSURLAUB) return false;
+  if (!employee?.hireDate || !entry.startDate) return false;
+  const start = startOfDay(parseISO(entry.startDate));
+  if (isBefore(startOfDay(today), start)) return false;
+  const hire = startOfDay(parseISO(employee.hireDate));
+  if (isAfter(hire, start)) return false;
+  if (employee.exitDate) {
+    const exit = startOfDay(parseISO(employee.exitDate));
+    if (isBefore(exit, start)) return false;
+  }
+  return true;
+}
+
+// Sum of Betriebsurlaub workdays charged against the employee's allowance in
+// `year`. `entries` is expected to already include materialized recurring
+// Betriebsurlaub rules (see collectYearEntries). Once recognized, the full
+// span of the Betriebsurlaub is deducted at once, not spread out day by day.
+export function betriebsurlaubWorkdaysInYear(entries, employee, year, today = new Date()) {
+  return entries
+    .filter((e) => e.type === TYPE_BETRIEBSURLAUB)
+    .filter((e) => isBetriebsurlaubRecognized(employee, e, today))
+    .reduce((sum, e) => sum + countWorkdaysInYear(e.startDate, e.endDate, year), 0);
+}
+
 // Sum urlaub workdays taken in a given calendar year (by employee),
 // respecting half-day flags.
 export function urlaubWorkdaysInYear(vacations, employeeId, year) {
@@ -347,25 +378,43 @@ export function isCarryoverAvailable(viewYear, today = new Date()) {
 // - usedAgainstAnnual: usedTotal - usedAgainstCarryover
 // - remaining: max(0, annual - usedAgainstAnnual)
 // - carryoverRemaining: carryoverAvailable - usedAgainstCarryover
-export function computeYearStats({ employee, vacations, year, today }) {
+export function computeYearStats({
+  employee,
+  vacations,
+  recurring,
+  companyId,
+  year,
+  today,
+}) {
+  const now = today || new Date();
   const annual = proratedAnnual(employee, year);
   const annualFull = Number(employee.yearlyVacationDays) || 0;
   const prorated = isProrated(employee, year);
   const carryoverTotal = computeCarryover(employee, vacations, year);
-  const available = isCarryoverAvailable(year, today || new Date())
-    ? carryoverTotal
-    : 0;
+  const available = isCarryoverAvailable(year, now) ? carryoverTotal : 0;
   const usedTotal = urlaubWorkdaysInYear(vacations, employee.id, year);
   const usedQ1 = urlaubWorkdaysInQ1(vacations, employee.id, year);
   const usedAgainstCarryover = Math.min(available, usedQ1);
-  const usedAgainstAnnual = Math.max(0, usedTotal - usedAgainstCarryover);
+  const yearEntries = collectYearEntries({
+    employee,
+    vacations,
+    recurring,
+    year,
+    companyId,
+  });
+  const usedBetriebsurlaub = betriebsurlaubWorkdaysInYear(
+    yearEntries,
+    employee,
+    year,
+    now,
+  );
+  const usedAgainstAnnual =
+    Math.max(0, usedTotal - usedAgainstCarryover) + usedBetriebsurlaub;
   // Remaining CAN go negative when the employee has booked more than they
   // are entitled to; the UI highlights this state.
   const remaining = annual - usedAgainstAnnual;
   const carryoverRemaining = Math.max(0, available - usedAgainstCarryover);
-  const expired = !isCarryoverAvailable(year, today || new Date())
-    ? carryoverTotal
-    : 0;
+  const expired = !isCarryoverAvailable(year, now) ? carryoverTotal : 0;
   const sickTotal = sickWorkdaysInYear(vacations, employee.id, year);
   return {
     annual,
@@ -376,6 +425,7 @@ export function computeYearStats({ employee, vacations, year, today }) {
     carryoverExpired: expired,
     carryoverRemaining,
     usedTotal,
+    usedBetriebsurlaub,
     usedAgainstAnnual,
     remaining,
     sickTotal,

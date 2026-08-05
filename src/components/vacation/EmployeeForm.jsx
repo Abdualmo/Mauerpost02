@@ -29,6 +29,7 @@ export default function EmployeeForm({
   );
   const [weeklyHours, setWeekly] = useState(employee?.weeklyHours ?? 40);
   const [hireDate, setHireDate] = useState(employee?.hireDate || "");
+  const [exitDate, setExitDate] = useState(employee?.exitDate || "");
   const [birthDate, setBirthDate] = useState(employee?.birthDate || "");
   const [probationStart, setProbStart] = useState(employee?.probationStart || "");
   const [probationEnd, setProbEnd] = useState(employee?.probationEnd || "");
@@ -47,11 +48,14 @@ export default function EmployeeForm({
       return setError("Urlaubstage müssen eine positive Zahl sein.");
     if (probationStart && probationEnd && probationEnd < probationStart)
       return setError("Probezeit-Ende darf nicht vor dem Start liegen.");
+    if (exitDate && exitDate < hireDate)
+      return setError("Austrittsdatum darf nicht vor dem Eintrittsdatum liegen.");
     const data = {
       fullName,
       yearlyVacationDays: num,
       weeklyHours: Number(weeklyHours) || 0,
       hireDate,
+      exitDate,
       birthDate,
       probationStart,
       probationEnd,
@@ -170,6 +174,16 @@ export default function EmployeeForm({
                 onChange={(e) => setBirthDate(e.target.value)}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="label">Austrittsdatum (optional)</label>
+            <input
+              className="input"
+              type="date"
+              value={exitDate}
+              onChange={(e) => setExitDate(e.target.value)}
+            />
           </div>
 
           <div>

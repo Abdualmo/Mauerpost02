@@ -258,6 +258,7 @@ export function createEmployee(companyId, data) {
     yearlyVacationDays: Number(data.yearlyVacationDays) || 0,
     weeklyHours: Number(data.weeklyHours) || 0,
     hireDate: data.hireDate,
+    exitDate: data.exitDate || "",
     birthDate: data.birthDate || "",
     probationStart: data.probationStart || "",
     probationEnd: data.probationEnd || "",
