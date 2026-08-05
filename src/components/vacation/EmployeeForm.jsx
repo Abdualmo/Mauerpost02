@@ -29,6 +29,7 @@ export default function EmployeeForm({
   );
   const [weeklyHours, setWeekly] = useState(employee?.weeklyHours ?? 40);
   const [hireDate, setHireDate] = useState(employee?.hireDate || "");
+  const [terminationDate, setTerminationDate] = useState(employee?.terminationDate || "");
   const [birthDate, setBirthDate] = useState(employee?.birthDate || "");
   const [probationStart, setProbStart] = useState(employee?.probationStart || "");
   const [probationEnd, setProbEnd] = useState(employee?.probationEnd || "");
@@ -47,11 +48,14 @@ export default function EmployeeForm({
       return setError("Urlaubstage müssen eine positive Zahl sein.");
     if (probationStart && probationEnd && probationEnd < probationStart)
       return setError("Probezeit-Ende darf nicht vor dem Start liegen.");
+    if (terminationDate && terminationDate < hireDate)
+      return setError("Austrittsdatum darf nicht vor dem Eintritt liegen.");
     const data = {
       fullName,
       yearlyVacationDays: num,
       weeklyHours: Number(weeklyHours) || 0,
       hireDate,
+      terminationDate,
       birthDate,
       probationStart,
       probationEnd,
@@ -162,6 +166,18 @@ export default function EmployeeForm({
               />
             </div>
             <div>
+              <label className="label">Austrittsdatum (optional)</label>
+              <input
+                className="input"
+                type="date"
+                value={terminationDate}
+                onChange={(e) => setTerminationDate(e.target.value)}
+                placeholder=""
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="label">Geburtsdatum</label>
               <input
                 className="input"
@@ -170,6 +186,7 @@ export default function EmployeeForm({
                 onChange={(e) => setBirthDate(e.target.value)}
               />
             </div>
+            <div />
           </div>
 
           <div>

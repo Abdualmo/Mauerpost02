@@ -24,7 +24,12 @@ const EMPLOYMENT_LABEL = {
 
 function EmployeeRow({ emp, year, today, onOpen, onPopover, popoverOpen, archived = false }) {
   const { vacations, company } = useData();
-  const stats = computeYearStats({ employee: emp, vacations, year });
+  const stats = computeYearStats({
+    employee: emp,
+    vacations,
+    recurring: company?.recurringCompanyVacation,
+    year,
+  });
   const absent = isAbsentOn({
     employee: emp,
     vacations,

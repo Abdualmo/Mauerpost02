@@ -260,6 +260,71 @@ export function collectYearEntries({
   return [...own, ...mat];
 }
 
+// A company vacation (one-off or materialised recurring rule) is only
+// deducted from an employee's personal quota when ALL of these hold on the
+// evaluation day (`today`):
+//   1. the employee was already hired at the first day of the Betriebsurlaub
+//      (hireDate <= startDate)
+//   2. the employee had not yet left at that first day
+//      (no terminationDate, or terminationDate >= startDate)
+//   3. the Betriebsurlaub has actually started (today >= startDate)
+// A future Betriebsurlaub never reduces the quota, even though it is already
+// stored in the system.
+export function shouldDeductCompanyVacation(employee, entry, today = new Date()) {
+  if (!entry || entry.type !== TYPE_BETRIEBSURLAUB) return false;
+  if (!entry.startDate) return false;
+  const start = parseISO(entry.startDate);
+  const t = startOfDay(today);
+  if (t < start) return false; // rule 3 — has not yet started
+  if (employee?.hireDate) {
+    const hire = parseISO(employee.hireDate);
+    if (hire > start) return false; // rule 1 — not yet employed
+  }
+  if (employee?.terminationDate) {
+    const term = parseISO(employee.terminationDate);
+    if (term < start) return false; // rule 2 — already left before start
+  }
+  return true;
+}
+
+function allCompanyVacationEntries(vacations, recurring, employee, year) {
+  const own = vacations.filter(
+    (v) =>
+      v.type === TYPE_BETRIEBSURLAUB &&
+      (v.employeeId === null ||
+        v.employeeId === undefined ||
+        v.employeeId === employee.id),
+  );
+  const mat = materializeRecurring(
+    recurring || [],
+    year,
+    employee.companyId || null,
+  );
+  return [...own, ...mat];
+}
+
+export function companyVacationWorkdaysInYear(vacations, recurring, employee, year, today = new Date()) {
+  return allCompanyVacationEntries(vacations, recurring, employee, year).reduce(
+    (sum, cv) => {
+      if (!shouldDeductCompanyVacation(employee, cv, today)) return sum;
+      return sum + countWorkdaysInYear(cv.startDate, cv.endDate, year);
+    },
+    0,
+  );
+}
+
+export function companyVacationWorkdaysInQ1(vacations, recurring, employee, year, today = new Date()) {
+  const q1Start = new Date(year, 0, 1);
+  const q1End = new Date(year, 2, 31);
+  return allCompanyVacationEntries(vacations, recurring, employee, year).reduce(
+    (sum, cv) => {
+      if (!shouldDeductCompanyVacation(employee, cv, today)) return sum;
+      return sum + countWorkdaysInRange(cv.startDate, cv.endDate, q1Start, q1End);
+    },
+    0,
+  );
+}
+
 // Sum urlaub workdays taken in a given calendar year (by employee),
 // respecting half-day flags.
 export function urlaubWorkdaysInYear(vacations, employeeId, year) {
@@ -347,23 +412,32 @@ export function isCarryoverAvailable(viewYear, today = new Date()) {
 // - usedAgainstAnnual: usedTotal - usedAgainstCarryover
 // - remaining: max(0, annual - usedAgainstAnnual)
 // - carryoverRemaining: carryoverAvailable - usedAgainstCarryover
-export function computeYearStats({ employee, vacations, year, today }) {
+export function computeYearStats({ employee, vacations, recurring, year, today }) {
+  const now = today || new Date();
   const annual = proratedAnnual(employee, year);
   const annualFull = Number(employee.yearlyVacationDays) || 0;
   const prorated = isProrated(employee, year);
   const carryoverTotal = computeCarryover(employee, vacations, year);
-  const available = isCarryoverAvailable(year, today || new Date())
+  const available = isCarryoverAvailable(year, now)
     ? carryoverTotal
     : 0;
-  const usedTotal = urlaubWorkdaysInYear(vacations, employee.id, year);
-  const usedQ1 = urlaubWorkdaysInQ1(vacations, employee.id, year);
+  const usedUrlaub = urlaubWorkdaysInYear(vacations, employee.id, year);
+  const usedCompany = companyVacationWorkdaysInYear(
+    vacations, recurring, employee, year, now,
+  );
+  const usedTotal = usedUrlaub + usedCompany;
+  const q1Urlaub = urlaubWorkdaysInQ1(vacations, employee.id, year);
+  const q1Company = companyVacationWorkdaysInQ1(
+    vacations, recurring, employee, year, now,
+  );
+  const usedQ1 = q1Urlaub + q1Company;
   const usedAgainstCarryover = Math.min(available, usedQ1);
   const usedAgainstAnnual = Math.max(0, usedTotal - usedAgainstCarryover);
   // Remaining CAN go negative when the employee has booked more than they
   // are entitled to; the UI highlights this state.
   const remaining = annual - usedAgainstAnnual;
   const carryoverRemaining = Math.max(0, available - usedAgainstCarryover);
-  const expired = !isCarryoverAvailable(year, today || new Date())
+  const expired = !isCarryoverAvailable(year, now)
     ? carryoverTotal
     : 0;
   const sickTotal = sickWorkdaysInYear(vacations, employee.id, year);
@@ -376,6 +450,8 @@ export function computeYearStats({ employee, vacations, year, today }) {
     carryoverExpired: expired,
     carryoverRemaining,
     usedTotal,
+    usedUrlaub,
+    usedCompany,
     usedAgainstAnnual,
     remaining,
     sickTotal,

@@ -45,7 +45,12 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
 
   const stats = useMemo(() => {
     if (!employee) return null;
-    return computeYearStats({ employee, vacations, year });
+    return computeYearStats({
+      employee,
+      vacations,
+      recurring: company?.recurringCompanyVacation,
+      year,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee, vacations, year]);
 
