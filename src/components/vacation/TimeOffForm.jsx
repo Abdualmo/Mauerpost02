@@ -1,25 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useData } from "../../contexts/DataContext.jsx";
+import { useAuth } from "../../contexts/AuthContext.jsx";
 import {
   TYPE_BETRIEBSURLAUB,
   TYPE_KRANKHEIT,
+  TYPE_SONDERURLAUB,
   TYPE_URLAUB,
+  crossesTermination,
+  isPastTermination,
 } from "../../lib/vacation.js";
+import { fmtDate } from "../../lib/date.js";
 
 export default function TimeOffForm({
   mode = "employee",
   employeeId,
+  employee: employeeProp,
   initialStart,
   initialEnd,
   onClose,
 }) {
-  const { createVacation } = useData();
+  const { createVacation, employees } = useData();
+  const { company } = useAuth();
+  const employee = employeeProp || employees.find((e) => e.id === employeeId);
+  const specialTypes = (company?.specialLeaveTypes || []).filter((t) => t.active !== false);
+
   const [startDate, setStartDate] = useState(initialStart || "");
   const [endDate, setEndDate] = useState(initialEnd || initialStart || "");
   const [type, setType] = useState(
     mode === "company" ? TYPE_BETRIEBSURLAUB : TYPE_URLAUB,
   );
+  const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [halfDayStart, setHalfDayStart] = useState(false);
   const [halfDayEnd, setHalfDayEnd] = useState(false);
@@ -29,10 +40,18 @@ export default function TimeOffForm({
     if (mode === "company") setType(TYPE_BETRIEBSURLAUB);
   }, [mode]);
 
+  // Preselect first available Sonderurlaub reason when the type switches.
+  useEffect(() => {
+    if (type === TYPE_SONDERURLAUB && !reason && specialTypes.length > 0) {
+      setReason(specialTypes[0].label);
+    }
+    if (type !== TYPE_SONDERURLAUB && reason) setReason("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
+
   const singleDay = startDate && endDate && startDate === endDate;
   const showHalfDayOptions = mode !== "company" && type === TYPE_URLAUB && startDate && endDate;
 
-  // Reset half-day flags whenever the range or type changes to a non-eligible state
   useEffect(() => {
     if (!showHalfDayOptions) {
       setHalfDayStart(false);
@@ -40,16 +59,31 @@ export default function TimeOffForm({
     }
   }, [showHalfDayOptions]);
 
+  const terminationBlocked = useMemo(() => {
+    if (mode === "company" || !employee?.terminationDate || !startDate || !endDate) return null;
+    if (isPastTermination(employee, startDate)) {
+      return `Das Arbeitsverhältnis endet am ${fmtDate(employee.terminationDate)}. Für diesen Zeitraum kann keine Abwesenheit eingetragen werden.`;
+    }
+    if (crossesTermination(employee, startDate, endDate)) {
+      return `Das Arbeitsverhältnis endet am ${fmtDate(employee.terminationDate)} — der gewählte Zeitraum überschreitet dieses Datum.`;
+    }
+    return null;
+  }, [mode, employee, startDate, endDate]);
+
   function submit(e) {
     e.preventDefault();
     setError("");
     if (!startDate || !endDate) return setError("Bitte Von und Bis angeben.");
     if (endDate < startDate) return setError("Enddatum liegt vor Startdatum.");
+    if (terminationBlocked) return setError(terminationBlocked);
+    if (type === TYPE_SONDERURLAUB && !reason)
+      return setError("Bitte einen Grund für den Sonderurlaub wählen.");
     createVacation({
       employeeId: mode === "company" ? null : employeeId,
       startDate,
       endDate,
       type,
+      reason: type === TYPE_SONDERURLAUB ? reason : "",
       notes,
       halfDayStart: showHalfDayOptions && halfDayStart,
       halfDayEnd: showHalfDayOptions && !singleDay && halfDayEnd,
@@ -84,6 +118,7 @@ export default function TimeOffForm({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                max={employee?.terminationDate || undefined}
                 autoFocus
               />
             </div>
@@ -94,6 +129,7 @@ export default function TimeOffForm({
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                max={employee?.terminationDate || undefined}
               />
             </div>
           </div>
@@ -101,7 +137,7 @@ export default function TimeOffForm({
           {mode !== "company" && (
             <div>
               <label className="label">Art</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setType(TYPE_URLAUB)}
@@ -124,7 +160,45 @@ export default function TimeOffForm({
                 >
                   Krankheit
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setType(TYPE_SONDERURLAUB)}
+                  className={`rounded-xl py-2 text-sm font-medium border transition-colors col-span-2 sm:col-span-1 ${
+                    type === TYPE_SONDERURLAUB
+                      ? "text-white border-transparent"
+                      : "border-black/10 hover:bg-blue-50"
+                  }`}
+                  style={type === TYPE_SONDERURLAUB ? { backgroundColor: "#4A90E2" } : undefined}
+                >
+                  Sonderurlaub
+                </button>
               </div>
+            </div>
+          )}
+
+          {type === TYPE_SONDERURLAUB && (
+            <div>
+              <label className="label">Grund</label>
+              {specialTypes.length === 0 ? (
+                <div className="text-xs text-black/60 bg-gold-softer rounded-xl px-3 py-2">
+                  Es sind keine Sonderurlaubsarten hinterlegt. Bitte in den
+                  Einstellungen unter „Sonderurlaub" mindestens eine Kategorie
+                  anlegen.
+                </div>
+              ) : (
+                <select
+                  className="input"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                >
+                  {specialTypes.map((t) => (
+                    <option key={t.id} value={t.label}>
+                      {t.label}
+                      {t.days ? ` (max. ${t.days} Tage)` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 
@@ -175,9 +249,9 @@ export default function TimeOffForm({
             />
           </div>
 
-          {error && (
+          {(error || terminationBlocked) && (
             <div className="text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">
-              {error}
+              {error || terminationBlocked}
             </div>
           )}
 
@@ -185,7 +259,11 @@ export default function TimeOffForm({
             <button type="button" className="btn-ghost" onClick={onClose}>
               Abbrechen
             </button>
-            <button type="submit" className="btn-primary">
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={Boolean(terminationBlocked)}
+            >
               Speichern
             </button>
           </div>

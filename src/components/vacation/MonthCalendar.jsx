@@ -17,6 +17,7 @@ import {
   holidayName,
   TYPE_BETRIEBSURLAUB,
   TYPE_KRANKHEIT,
+  TYPE_SONDERURLAUB,
   TYPE_URLAUB,
 } from "../../lib/vacation.js";
 import { toISO } from "../../lib/date.js";
@@ -27,6 +28,7 @@ const colorFor = (type) => {
   if (type === TYPE_URLAUB) return { bg: "#C8A96B", fg: "#000000" };
   if (type === TYPE_BETRIEBSURLAUB) return { bg: "#5E9EA0", fg: "#FFFFFF" };
   if (type === TYPE_KRANKHEIT) return { bg: "#D64545", fg: "#FFFFFF" };
+  if (type === TYPE_SONDERURLAUB) return { bg: "#4A90E2", fg: "#FFFFFF" };
   return { bg: "transparent", fg: "#000000" };
 };
 
@@ -38,6 +40,7 @@ export default function MonthCalendar({
   draftStartISO,
   today,
   birthdayISO,
+  terminationISO,
   onDayClick,
 }) {
   const first = startOfMonth(monthDate);
@@ -71,18 +74,21 @@ export default function MonthCalendar({
           const isBirthday = birthdayISO && iso === birthdayISO;
           const holiday = holidayName(iso);
           const halfDay = entry ? isHalfDayFor(entry, iso) : false;
+          const afterTermination = terminationISO && iso > terminationISO;
           const c = entry ? colorFor(entry.type) : null;
 
           const baseClasses = [
             "h-9 sm:h-10 rounded-lg text-sm relative flex items-center justify-center transition-colors overflow-hidden",
             inMonth ? "" : "opacity-30",
           ];
-          if (!entry && !weekend && !holiday && inMonth) {
+          if (afterTermination) {
+            baseClasses.push("cursor-not-allowed");
+          } else if (!entry && !weekend && !holiday && inMonth) {
             baseClasses.push("hover:bg-[#F2EBDD] cursor-pointer");
           } else if (entry && inMonth) {
             baseClasses.push("cursor-pointer");
           }
-          if (weekend && !entry) {
+          if (weekend && !entry && !afterTermination) {
             baseClasses.push("bg-black/[0.03] text-black/30");
           }
           if (isToday) {
@@ -91,15 +97,21 @@ export default function MonthCalendar({
           if (draft) {
             baseClasses.push("ring-2 ring-[#C8A96B]");
           }
-          if (isBirthday && !entry) {
+          if (isBirthday && !entry && !afterTermination) {
             baseClasses.push("!bg-[#F7DDE3] text-black");
           }
 
           let style;
-          if (entry) {
+          if (afterTermination && !entry) {
+            // Post-termination: unified dark-neutral hatch, click blocked
+            style = {
+              backgroundColor: "#33322D",
+              color: "#8A857A",
+              backgroundImage:
+                "repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.05) 4px 8px)",
+            };
+          } else if (entry) {
             if (halfDay) {
-              // Diagonal split: half vacation color, half transparent white so
-              // the underlying free-day surface shows through.
               style = {
                 background: `linear-gradient(135deg, ${c.bg} 50%, rgba(255,255,255,0.85) 50%)`,
                 color: c.fg,
@@ -112,7 +124,9 @@ export default function MonthCalendar({
           }
 
           const title = [
+            afterTermination ? "Arbeitsverhältnis beendet" : undefined,
             entry?.notes,
+            entry?.reason ? `Grund: ${entry.reason}` : undefined,
             holiday || undefined,
             isBirthday ? "Geburtstag" : undefined,
             halfDay ? "Halbtag" : undefined,
@@ -123,28 +137,19 @@ export default function MonthCalendar({
           return (
             <button
               key={iso}
-              disabled={!inMonth}
+              disabled={!inMonth || afterTermination}
               onClick={() => onDayClick && onDayClick(iso, entry)}
               className={baseClasses.join(" ")}
               style={style}
               title={title || undefined}
             >
               {day.getDate()}
-              {isBirthday && (
+              {isBirthday && !afterTermination && (
                 <span
                   className="absolute top-0.5 right-0.5 text-[10px] leading-none"
                   aria-hidden
-                  title="Geburtstag"
                 >
                   🎂
-                </span>
-              )}
-              {holiday && !entry && (
-                <span
-                  className="absolute bottom-0.5 left-1 text-[9px] leading-none text-black/50 truncate"
-                  style={{ maxWidth: "80%" }}
-                >
-                  ·
                 </span>
               )}
               {halfDay && (

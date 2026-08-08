@@ -1,4 +1,4 @@
-import { CalendarCheck, Clock3, Palmtree, CalendarClock, Thermometer } from "lucide-react";
+import { CalendarCheck, Clock3, Palmtree, CalendarClock, Thermometer, Gift } from "lucide-react";
 
 function Card({ icon: Icon, label, value, hint, tint = "#F7F3ED", iconColor = "#A68445", danger = false }) {
   return (
@@ -35,7 +35,7 @@ export default function SummaryCards({ stats, year }) {
       : `nutzbar bis 31.03.${year}`
     : "kein Übertrag";
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
       <Card
         icon={CalendarCheck}
         label="Jahresanspruch"
@@ -64,6 +64,14 @@ export default function SummaryCards({ stats, year }) {
             : stats.carryoverTotal || 0
         }
         hint={carryoverHint}
+      />
+      <Card
+        icon={Gift}
+        label="Sonderurlaub"
+        value={stats.sonderurlaubTotal || 0}
+        hint="separat, nicht vom Anspruch"
+        tint="#E3EEFB"
+        iconColor="#4A90E2"
       />
       <Card
         icon={Thermometer}

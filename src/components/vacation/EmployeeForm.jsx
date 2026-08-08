@@ -8,8 +8,24 @@ const EMPLOYMENT_TYPES = [
   { value: "vollzeit", label: "Vollzeit" },
   { value: "teilzeit", label: "Teilzeit" },
   { value: "minijob", label: "Minijob" },
+  { value: "werkstudent", label: "Werkstudent" },
+  { value: "azubi", label: "Azubi" },
   { value: "sonstige", label: "Sonstige" },
 ];
+
+const CONTRACT_STATUS = [
+  { value: "unbefristet", label: "Unbefristet" },
+  { value: "befristet", label: "Befristet" },
+];
+
+// Split "Vor Nach" into first / last on the fly.
+function splitName(full) {
+  const trimmed = (full || "").trim();
+  if (!trimmed) return { first: "", last: "" };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
 
 export default function EmployeeForm({
   employee,
@@ -18,18 +34,26 @@ export default function EmployeeForm({
   onDeleted,
   onArchived,
 }) {
-  const { createEmployee, updateEmployee, deleteEmployee, archiveEmployee, unarchiveEmployee } =
-    useData();
+  const {
+    createEmployee,
+    updateEmployee,
+    moveToTrash,
+    archiveEmployee,
+    unarchiveEmployee,
+  } = useData();
   const confirm = useConfirm();
   const isEdit = Boolean(employee);
 
   const [fullName, setFullName] = useState(employee?.fullName || "");
+  const [personalNumber, setPersonalNumber] = useState(employee?.personalNumber || "");
+  const [department, setDepartment] = useState(employee?.department || "");
   const [yearlyVacationDays, setYearly] = useState(
     employee?.yearlyVacationDays ?? defaultVacationDays,
   );
   const [weeklyHours, setWeekly] = useState(employee?.weeklyHours ?? 40);
   const [hireDate, setHireDate] = useState(employee?.hireDate || "");
   const [terminationDate, setTerminationDate] = useState(employee?.terminationDate || "");
+  const [contractStatus, setContractStatus] = useState(employee?.contractStatus || "unbefristet");
   const [birthDate, setBirthDate] = useState(employee?.birthDate || "");
   const [probationStart, setProbStart] = useState(employee?.probationStart || "");
   const [probationEnd, setProbEnd] = useState(employee?.probationEnd || "");
@@ -50,12 +74,20 @@ export default function EmployeeForm({
       return setError("Probezeit-Ende darf nicht vor dem Start liegen.");
     if (terminationDate && terminationDate < hireDate)
       return setError("Austrittsdatum darf nicht vor dem Eintritt liegen.");
+    if (contractStatus === "befristet" && !terminationDate)
+      return setError("Befristete Verträge benötigen ein Austrittsdatum.");
+    const { first, last } = splitName(fullName);
     const data = {
-      fullName,
+      fullName: fullName.trim(),
+      firstName: first,
+      lastName: last,
+      personalNumber: personalNumber.trim(),
+      department: department.trim(),
       yearlyVacationDays: num,
       weeklyHours: Number(weeklyHours) || 0,
       hireDate,
       terminationDate,
+      contractStatus,
       birthDate,
       probationStart,
       probationEnd,
@@ -72,12 +104,12 @@ export default function EmployeeForm({
     if (!isEdit) return;
     const ok = await confirm({
       title: "Mitarbeiter löschen?",
-      message: `Möchtest du „${employee.fullName}" wirklich löschen? Alle zugehörigen Urlaubseinträge werden ebenfalls entfernt.`,
-      confirmLabel: "Löschen",
+      message: `„${employee.fullName}" wird in den Papierkorb verschoben. Nach 3 Monaten erfolgt die automatische, endgültige Löschung. Bis dahin kann der Mitarbeiter jederzeit wiederhergestellt werden.`,
+      confirmLabel: "In Papierkorb",
       danger: true,
     });
     if (!ok) return;
-    deleteEmployee(employee.id);
+    moveToTrash(employee.id);
     onClose();
     onDeleted && onDeleted();
   }
@@ -125,13 +157,34 @@ export default function EmployeeForm({
 
         <form onSubmit={submit} className="space-y-3">
           <div>
-            <label className="label">Name *</label>
+            <label className="label">Vor- und Nachname *</label>
             <input
               className="input"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
+              placeholder="z. B. Max Mustermann"
               autoFocus
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Personalnummer (optional)</label>
+              <input
+                className="input"
+                value={personalNumber}
+                onChange={(e) => setPersonalNumber(e.target.value)}
+                placeholder="z. B. P-042"
+              />
+            </div>
+            <div>
+              <label className="label">Abteilung (optional)</label>
+              <input
+                className="input"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="z. B. IT, Empfang"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -166,17 +219,33 @@ export default function EmployeeForm({
               />
             </div>
             <div>
-              <label className="label">Austrittsdatum (optional)</label>
+              <label className="label">
+                Austrittsdatum{" "}
+                {contractStatus === "befristet" ? "*" : "(optional)"}
+              </label>
               <input
                 className="input"
                 type="date"
                 value={terminationDate}
                 onChange={(e) => setTerminationDate(e.target.value)}
-                placeholder=""
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Vertragsstatus</label>
+              <select
+                className="input"
+                value={contractStatus}
+                onChange={(e) => setContractStatus(e.target.value)}
+              >
+                {CONTRACT_STATUS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="label">Geburtsdatum</label>
               <input
@@ -186,7 +255,6 @@ export default function EmployeeForm({
                 onChange={(e) => setBirthDate(e.target.value)}
               />
             </div>
-            <div />
           </div>
 
           <div>
@@ -278,7 +346,7 @@ export default function EmployeeForm({
               )}
               {isEdit && (
                 <button type="button" className="btn-danger" onClick={remove}>
-                  Löschen
+                  In Papierkorb
                 </button>
               )}
             </div>

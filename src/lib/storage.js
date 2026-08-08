@@ -80,11 +80,27 @@ export function createCompany({ name, defaultVacationDays = 30 }) {
     name,
     defaultVacationDays,
     recurringCompanyVacation: [],
+    address: "",
+    contact: "",
+    logo: "", // data URL
+    specialLeaveTypes: DEFAULT_SPECIAL_LEAVE_TYPES(),
     createdAt: new Date().toISOString(),
   };
   companies.push(company);
   write(K_COMPANIES, companies);
   return company;
+}
+
+// Reasonable default catalogue of Sonderurlaub reasons (BGB-orientiert).
+// The admin can add/edit/remove them from Settings.
+export function DEFAULT_SPECIAL_LEAVE_TYPES() {
+  return [
+    { id: uid(), label: "Hochzeit (eigene)", days: 1, active: true },
+    { id: uid(), label: "Geburt eines Kindes", days: 1, active: true },
+    { id: uid(), label: "Umzug (dienstlich veranlasst)", days: 1, active: true },
+    { id: uid(), label: "Todesfall in der Familie", days: 2, active: true },
+    { id: uid(), label: "Sonstiges", days: 0, active: true },
+  ];
 }
 
 export function createUser({ email, password, fullName, companyId, role }) {
@@ -234,12 +250,51 @@ export function ackWarning(employeeId, year) {
 
 export function getEmployees(companyId, { includeArchived = false } = {}) {
   return read(K_EMPLOYEES).filter(
-    (e) => e.companyId === companyId && (includeArchived || !e.archived),
+    (e) =>
+      e.companyId === companyId &&
+      !e.deletedAt &&
+      (includeArchived || !e.archived),
   );
 }
 
 export function getArchivedEmployees(companyId) {
-  return read(K_EMPLOYEES).filter((e) => e.companyId === companyId && e.archived);
+  return read(K_EMPLOYEES).filter(
+    (e) => e.companyId === companyId && e.archived && !e.deletedAt,
+  );
+}
+
+export function getTrashedEmployees(companyId) {
+  return read(K_EMPLOYEES).filter(
+    (e) => e.companyId === companyId && Boolean(e.deletedAt),
+  );
+}
+
+// Auto-purge trash entries older than 90 days. Returns number purged.
+export function purgeExpiredTrash() {
+  const all = read(K_EMPLOYEES);
+  const now = Date.now();
+  const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+  const toPurge = new Set(
+    all
+      .filter((e) => e.deletedAt && now - new Date(e.deletedAt).getTime() >= NINETY_DAYS)
+      .map((e) => e.id),
+  );
+  if (toPurge.size === 0) return 0;
+  const remaining = all.filter((e) => !toPurge.has(e.id));
+  localStorage.setItem(K_EMPLOYEES, JSON.stringify(remaining));
+  // Also purge their vacations
+  const vacs = read(K_VACATIONS).filter((v) => !toPurge.has(v.employeeId));
+  localStorage.setItem(K_VACATIONS, JSON.stringify(vacs));
+  notify();
+  return toPurge.size;
+}
+
+// Return date (ISO) when an employee in the trash will be purged.
+export function trashPurgeDate(employee) {
+  if (!employee?.deletedAt) return null;
+  const d = new Date(employee.deletedAt);
+  d.setDate(d.getDate() + 90);
+  return d.toISOString();
 }
 
 export function getEmployee(id, companyId) {
@@ -255,10 +310,15 @@ export function createEmployee(companyId, data) {
     id: uid(),
     companyId,
     fullName: data.fullName.trim(),
+    firstName: data.firstName || "",
+    lastName: data.lastName || "",
+    personalNumber: data.personalNumber || "",
+    department: data.department || "",
     yearlyVacationDays: Number(data.yearlyVacationDays) || 0,
     weeklyHours: Number(data.weeklyHours) || 0,
     hireDate: data.hireDate,
     terminationDate: data.terminationDate || "",
+    contractStatus: data.contractStatus || "unbefristet", // 'unbefristet' | 'befristet'
     birthDate: data.birthDate || "",
     probationStart: data.probationStart || "",
     probationEnd: data.probationEnd || "",
@@ -267,11 +327,26 @@ export function createEmployee(companyId, data) {
     userId: data.userId || "",
     archived: false,
     archivedAt: null,
+    deletedAt: null,
     createdAt: new Date().toISOString(),
   };
   all.push(emp);
   write(K_EMPLOYEES, all);
   return emp;
+}
+
+// Soft-delete: move to trash (auto-purge after 90 days).
+export function moveEmployeeToTrash(id, companyId) {
+  return updateEmployee(id, companyId, {
+    deletedAt: new Date().toISOString(),
+    archived: false, // trash overrides archive
+  });
+}
+
+export function restoreEmployeeFromTrash(id, companyId) {
+  return updateEmployee(id, companyId, {
+    deletedAt: null,
+  });
 }
 
 export function updateEmployee(id, companyId, patch) {
@@ -312,6 +387,7 @@ export function createVacation(companyId, data) {
     endDate: data.endDate,
     type: data.type,
     notes: data.notes || "",
+    reason: data.reason || "", // for Sonderurlaub
     halfDayStart: Boolean(data.halfDayStart),
     halfDayEnd: Boolean(data.halfDayEnd),
     createdAt: new Date().toISOString(),

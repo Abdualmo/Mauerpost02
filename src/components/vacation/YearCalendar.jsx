@@ -7,6 +7,7 @@ export default function YearCalendar({
   draftStartISO,
   today,
   birthdayISO,
+  terminationISO,
   onDayClick,
 }) {
   const base = new Date(year, 0, 1);
@@ -21,6 +22,7 @@ export default function YearCalendar({
           draftStartISO={draftStartISO}
           today={today}
           birthdayISO={birthdayISO}
+          terminationISO={terminationISO}
           onDayClick={onDayClick}
         />
       ))}

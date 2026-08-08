@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import {
   TYPE_BETRIEBSURLAUB,
   TYPE_KRANKHEIT,
+  TYPE_SONDERURLAUB,
   TYPE_URLAUB,
   countWorkdaysInYear,
   halfDayAdjustment,
@@ -12,6 +13,7 @@ const meta = {
   [TYPE_URLAUB]: { color: "#C8A96B", label: "Urlaub" },
   [TYPE_BETRIEBSURLAUB]: { color: "#5E9EA0", label: "Betriebsurlaub" },
   [TYPE_KRANKHEIT]: { color: "#D64545", label: "Krankheit" },
+  [TYPE_SONDERURLAUB]: { color: "#4A90E2", label: "Sonderurlaub" },
 };
 
 export default function EntryList({ entries, year, canManage, onDelete }) {
@@ -57,6 +59,7 @@ export default function EntryList({ entries, year, canManage, onDelete }) {
                 <div className="text-xs text-black/50 truncate">
                   {days} Arbeitstag{days === 1 ? "" : "e"}
                   {isHalf ? " · Halbtag" : ""}
+                  {e.reason ? ` · Grund: ${e.reason}` : ""}
                   {e.notes ? ` · ${e.notes}` : ""}
                   {isRecurring ? " · wiederkehrend" : ""}
                 </div>

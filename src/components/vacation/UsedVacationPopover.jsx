@@ -3,6 +3,7 @@ import { useData } from "../../contexts/DataContext.jsx";
 import {
   TYPE_BETRIEBSURLAUB,
   TYPE_KRANKHEIT,
+  TYPE_SONDERURLAUB,
   TYPE_URLAUB,
   collectYearEntries,
   countWorkdaysInYear,
@@ -16,7 +17,9 @@ const dotFor = (t) =>
       ? { color: "#5E9EA0", label: "Betriebsurlaub" }
       : t === TYPE_KRANKHEIT
         ? { color: "#D64545", label: "Krankheit" }
-        : { color: "#999", label: t };
+        : t === TYPE_SONDERURLAUB
+          ? { color: "#4A90E2", label: "Sonderurlaub" }
+          : { color: "#999", label: t };
 
 export default function UsedVacationPopover({ employeeId, year, onClose }) {
   const { vacations, company, employees } = useData();

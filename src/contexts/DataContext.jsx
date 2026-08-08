@@ -14,8 +14,12 @@ import {
   deleteVacation as sDeleteVacation,
   getArchivedEmployees,
   getEmployees,
+  getTrashedEmployees,
   getVacations,
+  moveEmployeeToTrash as sMoveEmployeeToTrash,
   onDataChange,
+  purgeExpiredTrash,
+  restoreEmployeeFromTrash as sRestoreEmployeeFromTrash,
   updateEmployee as sUpdateEmployee,
   updateVacation as sUpdateVacation,
 } from "../lib/storage.js";
@@ -28,6 +32,12 @@ export function DataProvider({ children }) {
   const bump = useCallback(() => setTick((n) => n + 1), []);
 
   useEffect(() => onDataChange(bump), [bump]);
+
+  // Auto-purge trashed employees older than 90 days whenever the company
+  // or storage changes. Runs cheap; noop if nothing to purge.
+  useEffect(() => {
+    purgeExpiredTrash();
+  }, [tick]);
 
   const companyId = company?.id;
 
@@ -47,6 +57,14 @@ export function DataProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, tick]);
 
+  const trashedEmployees = useMemo(() => {
+    if (!companyId) return [];
+    return getTrashedEmployees(companyId).sort((a, b) =>
+      (b.deletedAt || "").localeCompare(a.deletedAt || ""),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, tick]);
+
   const vacations = useMemo(() => {
     if (!companyId) return [];
     return getVacations(companyId);
@@ -56,6 +74,7 @@ export function DataProvider({ children }) {
   const api = {
     employees,
     archivedEmployees,
+    trashedEmployees,
     vacations,
     company,
     archiveEmployee(id) {
@@ -69,6 +88,21 @@ export function DataProvider({ children }) {
     unarchiveEmployee(id) {
       if (!companyId) return;
       sUpdateEmployee(id, companyId, { archived: false, archivedAt: null });
+      bump();
+    },
+    moveToTrash(id) {
+      if (!companyId) return;
+      sMoveEmployeeToTrash(id, companyId);
+      bump();
+    },
+    restoreFromTrash(id) {
+      if (!companyId) return;
+      sRestoreEmployeeFromTrash(id, companyId);
+      bump();
+    },
+    purgeNow(id) {
+      if (!companyId) return;
+      sDeleteEmployee(id, companyId);
       bump();
     },
     createEmployee(data) {

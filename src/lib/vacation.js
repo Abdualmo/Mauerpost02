@@ -77,6 +77,18 @@ export function isWorkdayISO(dayISO) {
 export const TYPE_URLAUB = "urlaub";
 export const TYPE_KRANKHEIT = "krankheit";
 export const TYPE_BETRIEBSURLAUB = "betriebsurlaub";
+export const TYPE_SONDERURLAUB = "sonderurlaub";
+
+// Days past termination are not workdays for the employee any more.
+export function isPastTermination(employee, dayISO) {
+  if (!employee?.terminationDate || !dayISO) return false;
+  return dayISO > employee.terminationDate;
+}
+
+export function crossesTermination(employee, startISO, endISO) {
+  if (!employee?.terminationDate) return false;
+  return endISO > employee.terminationDate;
+}
 
 // Prorated annual vacation quota:
 // - Hired in a prior calendar year -> full annual quota
@@ -368,6 +380,28 @@ export function sickWorkdaysInYear(vacations, employeeId, year) {
     .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
 }
 
+// Sonderurlaub: never affects the annual Urlaubsanspruch.
+export function sonderurlaubWorkdaysInYear(vacations, employeeId, year) {
+  return vacations
+    .filter((v) => v.employeeId === employeeId && v.type === TYPE_SONDERURLAUB)
+    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
+}
+
+// Aggregate Sonderurlaub usage per reason for a given year.
+// Returns a Map<reason, days>.
+export function sonderurlaubUsageByReason(vacations, employeeId, year) {
+  const out = new Map();
+  vacations
+    .filter((v) => v.employeeId === employeeId && v.type === TYPE_SONDERURLAUB)
+    .forEach((v) => {
+      const days = countWorkdaysInYear(v.startDate, v.endDate, year);
+      if (days <= 0) return;
+      const key = v.reason || "sonstige";
+      out.set(key, (out.get(key) || 0) + days);
+    });
+  return out;
+}
+
 // Compute the leftover from the previous year (workdays unused).
 // If the employee joined the company in the viewed year (or later), no carryover.
 export function computeCarryover(employee, vacations, viewYear) {
@@ -441,6 +475,7 @@ export function computeYearStats({ employee, vacations, recurring, year, today }
     ? carryoverTotal
     : 0;
   const sickTotal = sickWorkdaysInYear(vacations, employee.id, year);
+  const sonderurlaubTotal = sonderurlaubWorkdaysInYear(vacations, employee.id, year);
   return {
     annual,
     annualFull,
@@ -455,6 +490,7 @@ export function computeYearStats({ employee, vacations, recurring, year, today }
     usedAgainstAnnual,
     remaining,
     sickTotal,
+    sonderurlaubTotal,
     negative: remaining < 0,
   };
 }
