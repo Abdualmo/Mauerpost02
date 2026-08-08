@@ -569,5 +569,43 @@ export function generateEmployeePDF({ employee, vacations, company, year }) {
 export function downloadEmployeePDF({ employee, vacations, company, year }) {
   const doc = generateEmployeePDF({ employee, vacations, company, year });
   const safeName = (employee.fullName || "Mitarbeiter").replace(/[^\p{L}\p{N}_-]+/gu, "_");
-  doc.save(`Jahresuebersicht_${safeName}_${year}.pdf`);
+  const filename = `Jahresuebersicht_${safeName}_${year}.pdf`;
+
+  // Robust cross-browser save. jsPDF's own doc.save() falls apart on iPad
+  // Safari because it relies on the <a download> attribute that iOS ignores.
+  // Do the whole dance ourselves and surface a real error if it fails.
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  try {
+    a.click();
+  } finally {
+    // Cleanup after the browser had time to pick up the click.
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 4000);
+  }
+
+  // Detect the iOS-Safari case: the download attribute is silently ignored,
+  // the file opens inline. Users often see "nothing happens" because the
+  // navigation is to about:blank. In that case open the blob URL in a new
+  // tab so the PDF is visible and the user can share/save from there.
+  const isIOS =
+    /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+  if (isIOS) {
+    const opened = window.open(url, "_blank", "noopener");
+    if (!opened) {
+      throw new Error(
+        "Der Browser hat den Download blockiert. Bitte Popups für diese Seite erlauben oder stattdessen »Bericht drucken« nutzen.",
+      );
+    }
+  }
+  return true;
 }
