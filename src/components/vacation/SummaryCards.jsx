@@ -1,85 +1,110 @@
-import { CalendarCheck, Clock3, Palmtree, CalendarClock, Thermometer, Gift } from "lucide-react";
+// Kennzahlen-Karten der Mitarbeiterakte.
+// Design:
+//   - Label oben (klein, uppercase, umbruchsicher)
+//   - Grosser Wert vertikal zentriert, mit optionaler Einheit "Tage"
+//   - Optionaler Hinweis am Unterrand
+//   - Alle Karten teilen dieselbe Mindesthöhe, damit das Raster ruhig wirkt
+//   - Auf schmalen Screens wird die Schrift automatisch verkleinert
+//     und lange Labels dürfen umbrechen — nichts läuft aus der Box.
 
-function Card({ icon: Icon, label, value, hint, tint = "#F7F3ED", iconColor = "#A68445", danger = false }) {
+function Card({ label, value, unit, hint, danger, accentColor }) {
+  const compound = typeof value === "string" && /[\/·]/.test(value);
   return (
-    <div className={`card p-4 sm:p-5 ${danger ? "ring-1 ring-red-sick/40" : ""}`}>
-      <div className="flex items-center gap-3">
+    <div className="card p-4 sm:p-5 flex flex-col min-h-[124px] sm:min-h-[132px]">
+      <div className="flex items-start gap-1.5 min-h-[2.2em]">
+        {accentColor && (
+          <span
+            className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+            style={{ backgroundColor: accentColor }}
+            aria-hidden
+          />
+        )}
         <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-          style={{ backgroundColor: tint }}
+          className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.06em] text-black/60 leading-snug break-words hyphens-auto"
+          lang="de"
         >
-          <Icon className="w-5 h-5" style={{ color: iconColor }} />
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs uppercase tracking-wide text-black/50">
-            {label}
-          </div>
-          <div
-            className={`text-2xl font-semibold tabular-nums leading-tight ${danger ? "text-red-sick" : ""}`}
-          >
-            {value}
-          </div>
-          {hint && (
-            <div className="text-xs text-black/50 mt-0.5">{hint}</div>
-          )}
+          {label}
         </div>
       </div>
+
+      <div className="flex-1 flex items-baseline justify-start pt-1 min-w-0">
+        <div
+          className={`font-semibold tabular-nums leading-none ${
+            danger ? "text-red-sick" : "text-black"
+          } ${compound ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl"}`}
+        >
+          {value}
+        </div>
+        {unit && (
+          <span className="ml-1.5 text-sm sm:text-base text-black/50 font-normal">
+            {unit}
+          </span>
+        )}
+      </div>
+
+      {hint && (
+        <div className="text-[10px] sm:text-[11px] text-black/50 leading-snug mt-2 break-words hyphens-auto">
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function SummaryCards({ stats, year }) {
+  const carryoverValue =
+    stats.carryoverAvailable > 0
+      ? `${stats.carryoverRemaining} / ${stats.carryoverAvailable}`
+      : String(stats.carryoverTotal || 0);
   const carryoverHint = stats.carryoverTotal
     ? stats.carryoverAvailable === 0
       ? "nach 31.03. verfallen"
       : `nutzbar bis 31.03.${year}`
     : "kein Übertrag";
+  const genommenHint = stats.usedTotal !== stats.usedAgainstAnnual
+    ? `gesamt ${stats.usedTotal} · Q1 zuerst vom Übertrag`
+    : undefined;
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
       <Card
-        icon={CalendarCheck}
         label="Jahresanspruch"
         value={stats.annual}
+        unit="Tage"
         hint={stats.prorated ? `anteilig · voll ${stats.annualFull}` : undefined}
       />
       <Card
-        icon={Clock3}
         label="Genommen"
         value={stats.usedAgainstAnnual}
-        hint={`gesamt ${stats.usedTotal} · Q1 vor Übertrag zuerst`}
+        unit="Tage"
+        hint={genommenHint}
       />
       <Card
-        icon={Palmtree}
         label="Verbleibend"
         value={stats.remaining}
+        unit="Tage"
         danger={stats.negative}
         hint={stats.negative ? "negative Bilanz" : undefined}
       />
       <Card
-        icon={CalendarClock}
-        label="Vorjahr"
-        value={
-          stats.carryoverAvailable > 0
-            ? `${stats.carryoverRemaining} / ${stats.carryoverAvailable}`
-            : stats.carryoverTotal || 0
-        }
+        label="Vorjahresübertrag"
+        value={carryoverValue}
+        unit={carryoverValue.includes("/") ? undefined : "Tage"}
         hint={carryoverHint}
       />
       <Card
-        icon={Gift}
         label="Sonderurlaub"
         value={stats.sonderurlaubTotal || 0}
+        unit="Tage"
         hint="separat, nicht vom Anspruch"
-        tint="#E3EEFB"
-        iconColor="#4A90E2"
+        accentColor="#4A90E2"
       />
       <Card
-        icon={Thermometer}
         label="Krankheit"
         value={stats.sickTotal}
+        unit="Tage"
         hint={`Krankheitstage ${year}`}
-        tint="#FBE0E0"
-        iconColor="#D64545"
+        accentColor="#D64545"
       />
     </div>
   );
