@@ -10,33 +10,43 @@ import {
   countWorkdaysInYear,
   getGermanHolidays,
   halfDayAdjustment,
-  isPastTermination,
   sonderurlaubUsageByReason,
+  birthdayISO as birthdayForYear,
 } from "./vacation.js";
-import { fmtDate } from "./date.js";
+import { fmtDate, todayISO } from "./date.js";
 
-// Colors chosen to match the app palette.
-const COLORS = {
-  gold: [200, 169, 107],
-  goldDark: [140, 110, 56],
+// ---------------------------------------------------------------------------
+// Palette (RGB triples). Chosen so print & screen stay readable side-by-side
+// with the in-app calendar.
+// ---------------------------------------------------------------------------
+const C = {
   ink: [26, 26, 26],
   inkSoft: [80, 80, 80],
   inkMuted: [140, 140, 140],
+  gold: [200, 169, 107],
+  goldDark: [140, 110, 56],
   ruler: [225, 217, 194],
   urlaub: [200, 169, 107],
   betriebsurlaub: [94, 158, 160],
   krankheit: [214, 69, 69],
   sonderurlaub: [74, 144, 226],
   holiday: [237, 228, 211],
-  weekend: [245, 240, 232],
-  terminated: [51, 50, 45],
+  weekend: [232, 224, 208],
   workday: [252, 250, 245],
+  terminated: [51, 50, 45],
+  today: [26, 26, 26],
+  birthday: [247, 221, 227],
+  warnBg: [251, 224, 224],
+  warnBorder: [214, 69, 69],
+  cardBg: [252, 250, 245],
 };
 
 const MONTH_NAMES = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
   "Juli", "August", "September", "Oktober", "November", "Dezember",
 ];
+
+const WEEKDAY_HEADERS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 const TYPE_LABEL = {
   [TYPE_URLAUB]: "Urlaub",
@@ -45,27 +55,56 @@ const TYPE_LABEL = {
   [TYPE_SONDERURLAUB]: "Sonderurlaub",
 };
 
-// Data URLs from <input type="file"> can be PNG, JPEG, WEBP, etc. jsPDF
-// needs the matching format string or addImage() throws — read it from the
-// data URL's mime type instead of assuming PNG.
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+// German decimal ("5,5"), plus singular/plural noun handling.
+function fmtNumDE(n) {
+  if (n == null || Number.isNaN(n)) return "0";
+  const rounded = Math.round(n * 100) / 100;
+  const s = rounded.toString();
+  return s.replace(".", ",");
+}
+function fmtDaysDE(n) {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  const noun = v === 1 || v === -1 ? "Tag" : "Tage";
+  return `${fmtNumDE(v)} ${noun}`;
+}
+
+// jsPDF's addImage() throws on the wrong `format` argument, so read the mime
+// type out of the data URL and pass the matching value.
 function imageFormatFromDataUrl(dataUrl) {
   const m = /^data:image\/(png|jpe?g|webp)/i.exec(dataUrl || "");
   if (!m) return null;
-  const type = m[1].toLowerCase();
-  if (type === "jpg" || type === "jpeg") return "JPEG";
-  if (type === "webp") return "WEBP";
+  const t = m[1].toLowerCase();
+  if (t === "jpg" || t === "jpeg") return "JPEG";
+  if (t === "webp") return "WEBP";
   return "PNG";
 }
 
 function colorForType(type) {
-  if (type === TYPE_URLAUB) return COLORS.urlaub;
-  if (type === TYPE_BETRIEBSURLAUB) return COLORS.betriebsurlaub;
-  if (type === TYPE_KRANKHEIT) return COLORS.krankheit;
-  if (type === TYPE_SONDERURLAUB) return COLORS.sonderurlaub;
-  return COLORS.workday;
+  if (type === TYPE_URLAUB) return C.urlaub;
+  if (type === TYPE_BETRIEBSURLAUB) return C.betriebsurlaub;
+  if (type === TYPE_KRANKHEIT) return C.krankheit;
+  if (type === TYPE_SONDERURLAUB) return C.sonderurlaub;
+  return C.workday;
 }
 
-// Build a fast lookup: dayISO -> { type, isHalf } for the year.
+function labelEmploymentType(v) {
+  const map = {
+    vollzeit: "Vollzeit",
+    teilzeit: "Teilzeit",
+    minijob: "Minijob",
+    werkstudent: "Werkstudent",
+    azubi: "Azubi",
+    sonstige: "Sonstige",
+  };
+  return map[v] || v || "—";
+}
+
+// Expand entries into a per-day lookup: iso -> { entry, isHalf }.
+// Employee-specific entries win over company-wide ones on the same day.
 function entriesByDay(entries) {
   const map = new Map();
   entries.forEach((e) => {
@@ -78,7 +117,6 @@ function entriesByDay(entries) {
         (e.halfDayStart && iso === e.startDate) ||
         (e.halfDayEnd && iso === e.endDate) ||
         ((e.halfDayStart || e.halfDayEnd) && e.startDate === e.endDate);
-      // Employee-specific entries override company-wide ones on the same day.
       const prev = map.get(iso);
       if (!prev || (prev.entry.employeeId == null && e.employeeId != null)) {
         map.set(iso, { entry: e, isHalf });
@@ -89,391 +127,506 @@ function entriesByDay(entries) {
   return map;
 }
 
-function drawHeader(doc, { company, employee, year, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 40;
+// ---------------------------------------------------------------------------
+// Layout helper: encapsulates the current cursor, page metrics, and
+// automatic pagination when a section runs out of room.
+// ---------------------------------------------------------------------------
+function newLayout(doc, ctx) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const marginX = 40;
+  const marginTop = 40;
+  const marginBottom = 42;
+  const state = {
+    doc,
+    pageW,
+    pageH,
+    marginX,
+    marginTop,
+    marginBottom,
+    contentW: pageW - marginX * 2,
+    y: marginTop,
+    ctx,
+  };
 
+  state.ensure = function ensure(space) {
+    if (state.y + space > state.pageH - state.marginBottom) {
+      state.newPage();
+      return true;
+    }
+    return false;
+  };
+
+  state.newPage = function newPage() {
+    doc.addPage();
+    state.y = marginTop;
+    drawPageHeader(state);
+  };
+
+  return state;
+}
+
+// Top-of-page header (logo + company block on the left; right-aligned
+// "Mitarbeiter-Jahresübersicht · Year · Employee-Name"). Called on every
+// page including the first one.
+function drawPageHeader(L) {
+  const { doc, marginX, pageW, ctx } = L;
+  const { company, year, employee } = ctx;
+  const y = L.marginTop;
+  let logoH = 0;
   if (company?.logo) {
     const fmt = imageFormatFromDataUrl(company.logo);
     if (fmt) {
       try {
-        doc.addImage(company.logo, fmt, marginX, y, 55, 55, undefined, "FAST");
+        doc.addImage(company.logo, fmt, marginX, y, 48, 48, undefined, "FAST");
+        logoH = 48;
       } catch (err) {
         console.warn("PDF: Firmenlogo konnte nicht eingefügt werden:", err);
       }
-    } else {
-      console.warn("PDF: Firmenlogo hat ein nicht unterstütztes Format, wird übersprungen.");
     }
   }
-  const textX = company?.logo ? marginX + 65 : marginX;
+  const textX = logoH > 0 ? marginX + 58 : marginX;
 
-  doc.setTextColor(...COLORS.ink);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(company?.name || "Firma", textX, y + 16);
+  doc.setFontSize(13);
+  doc.setTextColor(...C.ink);
+  doc.text(company?.name || "Firma", textX, y + 14);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...COLORS.inkSoft);
-  if (company?.address) {
-    company.address.split(/\r?\n/).forEach((line, i) => {
-      doc.text(line, textX, y + 30 + i * 11);
-    });
-  }
+  doc.setFontSize(8.5);
+  doc.setTextColor(...C.inkSoft);
+  let addrY = y + 26;
+  (company?.address || "").split(/\r?\n/).forEach((line) => {
+    if (!line.trim()) return;
+    doc.text(line, textX, addrY);
+    addrY += 10;
+  });
   if (company?.contact) {
-    doc.text(`Ansprechpartner: ${company.contact}`, textX, y + 30 + (company?.address?.split(/\r?\n/).length || 0) * 11);
+    doc.text(`Ansprechpartner: ${company.contact}`, textX, addrY);
+    addrY += 10;
   }
 
-  // Right side: Mitarbeiter-Jahresübersicht
-  const rightX = pageWidth - marginX;
-  doc.setTextColor(...COLORS.goldDark);
+  const rightX = pageW - marginX;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text("MITARBEITER-JAHRESÜBERSICHT", rightX, y + 16, { align: "right" });
+  doc.setFontSize(8);
+  doc.setTextColor(...C.goldDark);
+  doc.text("MITARBEITER-JAHRESÜBERSICHT", rightX, y + 14, { align: "right" });
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLORS.ink);
   doc.setFontSize(11);
-  doc.text(String(year), rightX, y + 30, { align: "right" });
+  doc.setTextColor(...C.ink);
+  doc.text(String(year), rightX, y + 28, { align: "right" });
+  if (employee?.fullName) {
+    doc.setFontSize(9);
+    doc.setTextColor(...C.inkSoft);
+    doc.text(employee.fullName, rightX, y + 42, { align: "right" });
+  }
 
-  y += 68;
-  doc.setDrawColor(...COLORS.ruler);
+  const blockBottom = Math.max(logoH, addrY - y);
+  const ruleY = y + Math.max(blockBottom, 50) + 6;
+  doc.setDrawColor(...C.ruler);
   doc.setLineWidth(0.5);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  return y + 12;
+  doc.line(marginX, ruleY, pageW - marginX, ruleY);
+  L.y = ruleY + 14;
 }
 
-function drawFooter(doc, { pageNum, totalPages, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setDrawColor(...COLORS.ruler);
+// Footer applied at the end (once total page count is known).
+function drawPageFooter(doc, { pageNum, totalPages, marginX, pageW, pageH }) {
+  doc.setDrawColor(...C.ruler);
   doc.setLineWidth(0.4);
-  doc.line(marginX, pageHeight - 32, pageWidth - marginX, pageHeight - 32);
-
+  doc.line(marginX, pageH - 30, pageW - marginX, pageH - 30);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.setTextColor(...COLORS.inkMuted);
-  doc.text("Erstellt mit VacationPlanner Gold", marginX, pageHeight - 20);
+  doc.setTextColor(...C.inkMuted);
+  doc.text("Erstellt mit VacationPlanner Gold", marginX, pageH - 18);
   doc.text(
     `Seite ${pageNum} von ${totalPages}`,
-    pageWidth - marginX,
-    pageHeight - 20,
+    pageW - marginX,
+    pageH - 18,
     { align: "right" },
   );
 }
 
-function keyValue(doc, x, y, label, value, options = {}) {
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.inkMuted);
-  doc.text(label.toUpperCase(), x, y);
-  doc.setFont("helvetica", options.bold ? "bold" : "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...(options.color || COLORS.ink));
-  doc.text(value ?? "—", x, y + 12);
+// Section heading: gold uppercase title + hairline rule below.
+function sectionHeading(L, label) {
+  L.ensure(30);
+  const { doc, marginX, pageW } = L;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...C.goldDark);
+  doc.text(label.toUpperCase(), marginX, L.y);
+  L.y += 6;
+  doc.setDrawColor(...C.ruler);
+  doc.setLineWidth(0.4);
+  doc.line(marginX, L.y, pageW - marginX, L.y);
+  L.y += 14;
 }
 
-function drawEmployeeInfo(doc, { employee, y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const colW = (pageWidth - marginX * 2) / 3;
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
 
+// Big employee title + primary metadata grid.
+function drawEmployeeInfo(L, employee) {
+  const { doc, marginX, pageW } = L;
+
+  L.ensure(60);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.ink);
-  doc.text(employee.fullName, marginX, y);
+  doc.setFontSize(20);
+  doc.setTextColor(...C.ink);
+  doc.text(employee.fullName || "—", marginX, L.y + 10);
+  L.y += 18;
+
   if (employee.personalNumber) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setTextColor(...COLORS.inkMuted);
-    doc.text(`Personalnummer ${employee.personalNumber}`, marginX, y + 12);
+    doc.setTextColor(...C.inkMuted);
+    doc.text(`Personalnummer ${employee.personalNumber}`, marginX, L.y);
+    L.y += 10;
   }
-  let cursorY = y + 30;
+  L.y += 8;
 
-  const rows = [
-    [
-      { label: "Abteilung", value: employee.department || "—" },
-      { label: "Beschäftigung", value: labelEmploymentType(employee.employmentType) },
-      { label: "Wochenstunden", value: `${employee.weeklyHours || 0} h` },
-    ],
-    [
-      { label: "Eintritt", value: fmtDate(employee.hireDate) },
-      {
-        label: "Austritt",
-        value: employee.terminationDate ? fmtDate(employee.terminationDate) : "—",
-        bold: Boolean(employee.terminationDate),
-        color: employee.terminationDate ? COLORS.krankheit : COLORS.ink,
-      },
-      {
-        label: "Vertrag",
-        value: employee.contractStatus === "befristet" ? "Befristet" : "Unbefristet",
-      },
-    ],
-    [
-      {
-        label: "Probezeit",
-        value: employee.probationEnd
-          ? `${employee.probationStart ? fmtDate(employee.probationStart) + " – " : ""}${fmtDate(employee.probationEnd)}`
-          : "—",
-      },
-      {
-        label: "Geburtstag",
-        value: employee.birthDate ? fmtDate(employee.birthDate) : "—",
-      },
-      { label: "", value: "" },
-    ],
+  const cells = [
+    { label: "Abteilung", value: employee.department || "—" },
+    { label: "Beschäftigung", value: labelEmploymentType(employee.employmentType) },
+    { label: "Wochenstunden", value: `${employee.weeklyHours || 0} h` },
+    { label: "Eintritt", value: fmtDate(employee.hireDate) || "—" },
+    {
+      label: employee.contractStatus === "befristet" ? "Vertragsende" : "Austritt",
+      value: employee.terminationDate ? fmtDate(employee.terminationDate) : "—",
+      danger: Boolean(employee.terminationDate),
+    },
+    {
+      label: "Vertrag",
+      value: employee.contractStatus === "befristet" ? "Befristet" : "Unbefristet",
+    },
+    {
+      label: "Probezeit",
+      value: employee.probationEnd
+        ? `${employee.probationStart ? fmtDate(employee.probationStart) + " – " : ""}${fmtDate(employee.probationEnd)}`
+        : "—",
+    },
+    { label: "Geburtstag", value: fmtDate(employee.birthDate) || "—" },
+    { label: "Bericht erstellt", value: fmtDate(todayISO()) },
   ];
 
-  rows.forEach((row) => {
-    row.forEach((cell, i) => {
-      if (cell.label) keyValue(doc, marginX + i * colW, cursorY, cell.label, cell.value, cell);
-    });
-    cursorY += 32;
+  const cols = 3;
+  const colW = (pageW - marginX * 2) / cols;
+  const rowH = 30;
+  const rowCount = Math.ceil(cells.length / cols);
+  L.ensure(rowCount * rowH + 6);
+  cells.forEach((cell, i) => {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    const x = marginX + c * colW;
+    const y = L.y + r * rowH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...C.inkMuted);
+    doc.text(cell.label.toUpperCase(), x, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...(cell.danger ? C.krankheit : C.ink));
+    doc.text(String(cell.value), x, y + 12);
   });
-
-  return cursorY + 4;
+  L.y += rowCount * rowH + 6;
 }
 
-function labelEmploymentType(v) {
-  const map = {
-    vollzeit: "Vollzeit",
-    teilzeit: "Teilzeit",
-    minijob: "Minijob",
-    werkstudent: "Werkstudent",
-    azubi: "Azubi",
-    sonstige: "Sonstige",
-  };
-  return map[v] || (v || "—");
-}
-
-function drawSummary(doc, { stats, y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.goldDark);
-  doc.text("URLAUBS- UND ABWESENHEITSBILANZ", marginX, y);
-  y += 12;
-  doc.setDrawColor(...COLORS.ruler);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 14;
+// Balance section — the numbers the user cares about most.
+function drawSummary(L, stats) {
+  const { doc, marginX, pageW } = L;
+  sectionHeading(L, "Urlaubs- und Abwesenheitsbilanz");
 
   const rows = [
-    ["Jahresanspruch", `${stats.annual} Tage${stats.prorated ? ` (anteilig, voll ${stats.annualFull})` : ""}`],
-    ["Vorjahresübertrag", stats.carryoverTotal ? `${stats.carryoverTotal} Tage (${stats.carryoverAvailable > 0 ? `nutzbar bis 31.03.` : "verfallen"})` : "0 Tage"],
-    ["Bereits genommener Urlaub", `${stats.usedUrlaub ?? 0} Tage`],
-    ["Angerechneter Betriebsurlaub", `${stats.usedCompany ?? 0} Tage`],
-    ["Gesamt gegen Anspruch", `${stats.usedAgainstAnnual} Tage`],
-    ["Verbleibender Urlaub", { text: `${stats.remaining} Tage`, danger: stats.negative }],
-    ["Sonderurlaub (separat)", `${stats.sonderurlaubTotal || 0} Tage`],
-    ["Krankheitstage", `${stats.sickTotal || 0} Tage`],
+    { label: "Jahresanspruch", value: fmtDaysDE(stats.annual) + (stats.prorated ? `  (anteilig · voll ${fmtNumDE(stats.annualFull)})` : "") },
+    { label: "Vorjahresübertrag",
+      value: stats.carryoverTotal
+        ? `${fmtDaysDE(stats.carryoverTotal)}  (${stats.carryoverAvailable > 0 ? "nutzbar bis 31.03." : "verfallen"})`
+        : fmtDaysDE(0),
+    },
+    { label: "Gesamt verfügbar", value: fmtDaysDE(stats.annual + (stats.carryoverAvailable || 0)) },
+    { spacer: true },
+    { label: "Bereits genommener Urlaub", value: fmtDaysDE(stats.usedUrlaub) },
+    { label: "Angerechneter Betriebsurlaub", value: fmtDaysDE(stats.usedCompany) },
+    { label: "Gesamt gegen Anspruch", value: fmtDaysDE(stats.usedAgainstAnnual), bold: true },
+    { spacer: true },
+    { label: "Verbleibender Urlaub", value: fmtDaysDE(stats.remaining), bold: true, danger: stats.negative, highlight: true },
+    { spacer: true },
+    { label: "Sonderurlaub (separat gezählt)", value: fmtDaysDE(stats.sonderurlaubTotal || 0) },
+    { label: "Krankheitstage", value: fmtDaysDE(stats.sickTotal || 0) },
   ];
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  const rowH = 18;
-  rows.forEach((r, i) => {
-    doc.setTextColor(...COLORS.inkSoft);
-    doc.text(r[0], marginX, y + i * rowH);
-    const value = r[1];
-    if (typeof value === "object") {
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...(value.danger ? COLORS.krankheit : COLORS.ink));
-      doc.text(value.text, pageWidth - marginX, y + i * rowH, { align: "right" });
-    } else {
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...COLORS.ink);
-      doc.text(String(value), pageWidth - marginX, y + i * rowH, { align: "right" });
+  const rowH = 16;
+  rows.forEach((r) => {
+    if (r.spacer) {
+      L.y += 4;
+      return;
     }
+    L.ensure(rowH + 2);
+    if (r.highlight) {
+      doc.setFillColor(...C.cardBg);
+      doc.rect(marginX - 4, L.y - 11, pageW - marginX * 2 + 8, rowH, "F");
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...C.inkSoft);
+    doc.text(r.label, marginX, L.y);
+
+    doc.setFont("helvetica", r.bold ? "bold" : "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...(r.danger ? C.krankheit : C.ink));
+    doc.text(String(r.value), pageW - marginX, L.y, { align: "right" });
+
+    L.y += rowH;
   });
-  y += rows.length * rowH + 2;
-  return y;
 }
 
-function drawWarnings(doc, { employee, stats, y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
+function drawWarnings(L, employee, stats) {
   const warnings = [];
   if (stats.negative)
-    warnings.push(`Negative Urlaubsbilanz von ${stats.remaining} Tagen.`);
+    warnings.push(`Negative Urlaubsbilanz: ${fmtDaysDE(stats.remaining)}. Es wurde mehr Urlaub eingetragen als der Jahresanspruch zulässt.`);
   if (stats.carryoverAvailable === 0 && stats.carryoverTotal > 0)
-    warnings.push(`Vorjahresrest (${stats.carryoverTotal} Tage) ist nach dem 31.03. verfallen.`);
+    warnings.push(`Vorjahresrest (${fmtDaysDE(stats.carryoverTotal)}) ist nach dem 31.03. verfallen.`);
   if (employee.terminationDate)
     warnings.push(`Arbeitsverhältnis endet am ${fmtDate(employee.terminationDate)}.`);
-  if (warnings.length === 0) return y;
+  if (warnings.length === 0) return;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.krankheit);
-  doc.text("HINWEISE", marginX, y);
-  y += 12;
-  doc.setDrawColor(...COLORS.ruler);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 12;
+  const { doc, marginX, pageW } = L;
+  const totalH = 18 + warnings.length * 14 + 8;
+  L.ensure(totalH + 20);
+  L.y += 6;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...COLORS.ink);
-  warnings.forEach((w) => {
-    doc.text(`• ${w}`, marginX, y);
-    y += 14;
-  });
-  return y + 4;
-}
+  const boxY = L.y - 10;
+  doc.setFillColor(...C.warnBg);
+  doc.rect(marginX - 4, boxY, pageW - marginX * 2 + 8, totalH, "F");
+  doc.setDrawColor(...C.warnBorder);
+  doc.setLineWidth(1.2);
+  doc.line(marginX - 4, boxY, marginX - 4, boxY + totalH);
 
-function drawLegend(doc, { y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.setTextColor(...COLORS.goldDark);
-  doc.text("LEGENDE", marginX, y);
-  y += 10;
+  doc.setTextColor(...C.warnBorder);
+  doc.text("HINWEISE", marginX + 4, L.y);
+  L.y += 12;
 
-  const items = [
-    { color: COLORS.urlaub, label: "Urlaub" },
-    { color: COLORS.sonderurlaub, label: "Sonderurlaub" },
-    { color: COLORS.krankheit, label: "Krankheit" },
-    { color: COLORS.betriebsurlaub, label: "Betriebsurlaub" },
-    { color: COLORS.holiday, label: "Feiertag" },
-    { color: COLORS.workday, label: "Arbeitstag" },
-    { color: COLORS.weekend, label: "Wochenende" },
-    { color: COLORS.terminated, label: "Nach Vertragsende" },
-  ];
-  const boxW = 10;
-  const cellW = (pageWidth - marginX * 2) / 4;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...COLORS.ink);
-  items.forEach((it, i) => {
-    const col = i % 4;
-    const row = Math.floor(i / 4);
-    const x = marginX + col * cellW;
-    const yy = y + row * 14;
-    doc.setFillColor(...it.color);
-    doc.rect(x, yy - 8, boxW, boxW, "F");
-    doc.text(it.label, x + boxW + 4, yy);
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C.ink);
+  warnings.forEach((w) => {
+    const lines = doc.splitTextToSize(`• ${w}`, pageW - marginX * 2 - 8);
+    lines.forEach((line) => {
+      doc.text(line, marginX + 4, L.y);
+      L.y += 12;
+    });
   });
-  return y + Math.ceil(items.length / 4) * 14 + 4;
+  L.y += 6;
 }
 
-function drawYearCalendar(doc, { employee, entries, year, y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const availableWidth = pageWidth - marginX * 2;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.goldDark);
-  doc.text("JAHRESKALENDER", marginX, y);
-  y += 12;
-  doc.setDrawColor(...COLORS.ruler);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 10;
+// Full-year calendar as a 4×3 grid of small months.
+function drawYearCalendar(L, entries, employee, year) {
+  const { doc, marginX, pageW } = L;
+  sectionHeading(L, "Jahreskalender");
 
   const byDay = entriesByDay(entries);
-  const holidayMap = new Map(getGermanHolidays(year).map((h) => [h.iso, h.name]));
+  const holidays = new Map(getGermanHolidays(year).map((h) => [h.iso, h.name]));
+  const today = todayISO();
+  const bday = birthdayForYear(employee.birthDate, year);
+  const term = employee?.terminationDate;
 
   const cols = 4;
   const rows = 3;
   const gutter = 10;
-  const monthW = (availableWidth - gutter * (cols - 1)) / cols;
-  const monthH = 118;
+  const monthW = (pageW - marginX * 2 - gutter * (cols - 1)) / cols;
+  const monthH = 130;
+
+  L.ensure(monthH * rows + (rows - 1) * 10 + 20);
+  const baseY = L.y;
 
   for (let m = 0; m < 12; m++) {
     const col = m % cols;
     const row = Math.floor(m / cols);
     const mx = marginX + col * (monthW + gutter);
-    const my = y + row * (monthH + 10);
+    const my = baseY + row * (monthH + 10);
 
-    // Month title
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(...COLORS.ink);
+    doc.setFontSize(9.5);
+    doc.setTextColor(...C.ink);
     doc.text(MONTH_NAMES[m], mx, my);
 
-    // Weekday header
+    // Weekday header (Mo–So)
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
-    doc.setTextColor(...COLORS.inkMuted);
+    doc.setFontSize(6.5);
+    doc.setTextColor(...C.inkMuted);
     const dayW = monthW / 7;
-    ["M", "D", "M", "D", "F", "S", "S"].forEach((w, i) => {
-      doc.text(w, mx + i * dayW + dayW / 2, my + 10, { align: "center" });
+    WEEKDAY_HEADERS.forEach((w, i) => {
+      doc.text(w, mx + i * dayW + dayW / 2, my + 12, { align: "center" });
     });
 
-    // Days
     const firstOfMonth = new Date(year, m, 1);
-    const firstCol = (getDay(firstOfMonth) + 6) % 7; // Mon = 0
+    const firstCol = (getDay(firstOfMonth) + 6) % 7; // Mon=0
     const daysInMonth = getDaysInMonth(firstOfMonth);
-    const cellH = 12;
+    const cellH = 13.5;
+    const cellPad = 0.5;
+
     for (let d = 1; d <= daysInMonth; d++) {
       const cellIdx = firstCol + d - 1;
       const cCol = cellIdx % 7;
       const cRow = Math.floor(cellIdx / 7);
       const cx = mx + cCol * dayW;
-      const cy = my + 14 + cRow * cellH;
+      const cy = my + 16 + cRow * cellH;
       const iso = `${year}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const date = new Date(year, m, d);
-      const dow = getDay(date); // 0=Sun,6=Sat
+      const dow = getDay(date);
       const weekend = dow === 0 || dow === 6;
-      const holiday = holidayMap.has(iso);
-      const past = employee?.terminationDate && iso > employee.terminationDate;
+      const isHoliday = holidays.has(iso);
+      const past = term && iso > term;
       const entryInfo = byDay.get(iso);
+      const isToday = iso === today;
+      const isBday = bday && iso === bday;
 
       let bg;
-      if (past) bg = COLORS.terminated;
+      if (past) bg = C.terminated;
       else if (entryInfo) bg = colorForType(entryInfo.entry.type);
-      else if (holiday) bg = COLORS.holiday;
-      else if (weekend) bg = COLORS.weekend;
-      else bg = COLORS.workday;
+      else if (isHoliday) bg = C.holiday;
+      else if (weekend) bg = C.weekend;
+      else if (isBday) bg = C.birthday;
+      else bg = C.workday;
+
+      const rectX = cx + cellPad;
+      const rectY = cy - cellH + 2;
+      const rectW = dayW - cellPad * 2;
+      const rectH = cellH - 1;
 
       doc.setFillColor(...bg);
-      doc.rect(cx, cy - cellH + 2, dayW - 0.5, cellH - 0.5, "F");
-      doc.setFontSize(6);
-      const textColor = past
-        ? [180, 180, 180]
-        : entryInfo &&
-            (entryInfo.entry.type === TYPE_BETRIEBSURLAUB ||
-              entryInfo.entry.type === TYPE_KRANKHEIT ||
-              entryInfo.entry.type === TYPE_SONDERURLAUB)
-          ? [255, 255, 255]
-          : COLORS.ink;
-      doc.setTextColor(...textColor);
-      doc.text(String(d), cx + dayW / 2, cy - 1, { align: "center" });
+      doc.rect(rectX, rectY, rectW, rectH, "F");
+
+      // Half-day: draw a diagonal white triangle over the right half so the
+      // cell reads as half-coloured, matching the on-screen calendar.
       if (entryInfo?.isHalf) {
-        doc.setFontSize(5);
-        doc.text("½", cx + dayW - 2, cy - cellH + 6, { align: "right" });
+        doc.setFillColor(255, 255, 255);
+        doc.triangle(
+          rectX + rectW, rectY,
+          rectX + rectW, rectY + rectH,
+          rectX, rectY + rectH,
+          "F",
+        );
       }
+
+      // Today marker: thin dark border.
+      if (isToday) {
+        doc.setDrawColor(...C.today);
+        doc.setLineWidth(0.7);
+        doc.rect(rectX, rectY, rectW, rectH);
+      }
+
+      // Day number
+      doc.setFontSize(6.5);
+      const isDarkBg = past || (entryInfo && entryInfo.entry.type !== TYPE_URLAUB);
+      doc.setTextColor(...(past ? [180, 180, 180] : isDarkBg && !entryInfo?.isHalf ? [255, 255, 255] : C.ink));
+      doc.text(String(d), cx + dayW / 2, cy - 2, { align: "center" });
     }
   }
 
-  y += monthH * rows + 10 * (rows - 1) + 8;
-  return y;
+  L.y = baseY + monthH * rows + (rows - 1) * 10 + 8;
 }
 
-function drawEntryList(doc, { entries, year, y, marginX }) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-
+function drawLegend(L, employee) {
+  const { doc, marginX, pageW } = L;
+  L.ensure(48);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.goldDark);
-  doc.text("DETAILLIERTE ABWESENHEITEN", marginX, y);
-  y += 12;
-  doc.setDrawColor(...COLORS.ruler);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 12;
+  doc.setFontSize(8);
+  doc.setTextColor(...C.goldDark);
+  doc.text("LEGENDE", marginX, L.y);
+  L.y += 10;
+
+  const items = [
+    { color: C.urlaub, label: "Urlaub" },
+    { color: C.sonderurlaub, label: "Sonderurlaub" },
+    { color: C.krankheit, label: "Krankheit" },
+    { color: C.betriebsurlaub, label: "Betriebsurlaub" },
+    { color: C.holiday, label: "Feiertag" },
+    { color: C.workday, label: "Arbeitstag" },
+    { color: C.weekend, label: "Wochenende" },
+    { color: null, label: "Halbtag ½ (halbtransparent)" },
+  ];
+  if (employee.terminationDate) items.push({ color: C.terminated, label: "Nach Vertragsende" });
+  if (employee.birthDate) items.push({ color: C.birthday, label: "Geburtstag" });
+  items.push({ color: null, label: "Heute (dünner Rahmen)" });
+
+  const cols = 4;
+  const cellW = (pageW - marginX * 2) / cols;
+  const rowH = 14;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  items.forEach((it, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = marginX + col * cellW;
+    const yy = L.y + row * rowH;
+    if (it.color) {
+      doc.setFillColor(...it.color);
+      doc.rect(x, yy - 7, 9, 9, "F");
+    } else {
+      doc.setDrawColor(...C.inkMuted);
+      doc.setLineWidth(0.5);
+      doc.rect(x, yy - 7, 9, 9);
+    }
+    doc.setTextColor(...C.ink);
+    doc.text(it.label, x + 13, yy);
+  });
+  L.y += Math.ceil(items.length / cols) * rowH + 4;
+}
+
+// Table of every absence entry in the year, sorted by start date.
+function drawEntryList(L, entries, year) {
+  const { doc, marginX, pageW } = L;
+  sectionHeading(L, "Detaillierte Abwesenheiten");
 
   const sorted = [...entries].sort((a, b) => a.startDate.localeCompare(b.startDate));
   if (sorted.length === 0) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(...COLORS.inkMuted);
-    doc.text("Keine Abwesenheiten im Jahr.", marginX, y);
-    return y + 20;
+    doc.setTextColor(...C.inkMuted);
+    doc.text(`Keine Abwesenheiten in ${year}.`, marginX, L.y);
+    L.y += 20;
+    return;
   }
 
-  doc.setFontSize(9);
-  const rowH = 16;
-  sorted.forEach((e, i) => {
-    if (y > doc.internal.pageSize.getHeight() - 60) {
-      doc.addPage();
-      y = 60;
-    }
+  // Column layout
+  const colX = {
+    dot: marginX + 4,
+    art: marginX + 14,
+    range: marginX + 110,
+    days: pageW - marginX - 130,
+    notes: pageW - marginX - 130 + 42,
+  };
+  // Header row
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...C.goldDark);
+  doc.text("ART", colX.art, L.y);
+  doc.text("ZEITRAUM", colX.range, L.y);
+  doc.text("TAGE", colX.days, L.y, { align: "right" });
+  doc.text("GRUND / NOTIZ", colX.notes, L.y);
+  L.y += 4;
+  doc.setDrawColor(...C.ruler);
+  doc.setLineWidth(0.3);
+  doc.line(marginX, L.y, pageW - marginX, L.y);
+  L.y += 10;
+
+  doc.setFontSize(9.5);
+  sorted.forEach((e) => {
+    // Estimate row height based on wrapped notes.
+    const noteParts = [];
+    if (e.reason) noteParts.push(`Grund: ${e.reason}`);
+    if (e.halfDayStart || e.halfDayEnd) noteParts.push("Halbtag");
+    if (e.notes) noteParts.push(e.notes);
+    if (e.recurring) noteParts.push("wiederkehrend");
+    const notesText = noteParts.join(" · ") || "—";
+    const notesLines = doc.splitTextToSize(notesText, pageW - marginX - colX.notes);
+    const rowH = Math.max(16, notesLines.length * 11 + 4);
+
+    L.ensure(rowH + 4);
+
     const days = Math.max(
       0,
       countWorkdaysInYear(e.startDate, e.endDate, year) +
@@ -481,57 +634,61 @@ function drawEntryList(doc, { entries, year, y, marginX }) {
     );
     const [r, g, b] = colorForType(e.type);
     doc.setFillColor(r, g, b);
-    doc.circle(marginX + 4, y - 3, 3, "F");
-    doc.setTextColor(...COLORS.ink);
+    doc.circle(colX.dot, L.y - 3, 3, "F");
+
     doc.setFont("helvetica", "bold");
-    doc.text(TYPE_LABEL[e.type] || e.type, marginX + 14, y);
+    doc.setTextColor(...C.ink);
+    doc.text(TYPE_LABEL[e.type] || e.type, colX.art, L.y);
+
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(...COLORS.inkSoft);
-    doc.text(
-      `${fmtDate(e.startDate)} – ${fmtDate(e.endDate)}   ·   ${days} Arbeitstag${days === 1 ? "" : "e"}${e.halfDayStart || e.halfDayEnd ? " · Halbtag" : ""}${e.reason ? ` · Grund: ${e.reason}` : ""}${e.notes ? ` · ${e.notes}` : ""}`,
-      marginX + 14,
-      y + 10,
-      { maxWidth: pageWidth - marginX * 2 - 14 },
-    );
-    y += rowH + 10;
-  });
-  return y;
-}
+    doc.setTextColor(...C.inkSoft);
+    doc.text(`${fmtDate(e.startDate)} – ${fmtDate(e.endDate)}`, colX.range, L.y);
+    doc.setTextColor(...C.ink);
+    doc.text(fmtDaysDE(days), colX.days, L.y, { align: "right" });
 
-function drawSonderurlaubSummary(doc, { vacations, employee, year, y, marginX }) {
-  const usage = sonderurlaubUsageByReason(vacations, employee.id, year);
-  if (usage.size === 0) return y;
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...COLORS.goldDark);
-  doc.text("SONDERURLAUB NACH GRUND", marginX, y);
-  y += 12;
-  doc.setDrawColor(...COLORS.ruler);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 12;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...COLORS.ink);
-  Array.from(usage.entries())
-    .sort((a, b) => a[0].localeCompare(b[0], "de"))
-    .forEach(([reason, days]) => {
-      doc.text(reason, marginX, y);
-      doc.text(`${days} Tag${days === 1 ? "" : "e"}`, pageWidth - marginX, y, { align: "right" });
-      y += 14;
+    doc.setTextColor(...C.inkSoft);
+    notesLines.forEach((line, i) => {
+      doc.text(line, colX.notes, L.y + i * 11);
     });
-  return y + 4;
+
+    L.y += rowH;
+
+    doc.setDrawColor(...C.ruler);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, L.y - 6, pageW - marginX, L.y - 6);
+  });
+  L.y += 8;
 }
 
-/**
- * Generate a professional yearly report PDF for an employee.
- * Returns a Blob for saving or download.
- */
+function drawSonderReasons(L, vacations, employee, year) {
+  const { doc, marginX, pageW } = L;
+  const usage = sonderurlaubUsageByReason(vacations, employee.id, year);
+  if (usage.size === 0) return;
+
+  L.y += 12;
+  sectionHeading(L, "Sonderurlaub nach Grund");
+
+  const rowH = 16;
+  const rows = Array.from(usage.entries()).sort((a, b) => a[0].localeCompare(b[0], "de"));
+  rows.forEach(([reason, days]) => {
+    L.ensure(rowH + 2);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...C.ink);
+    doc.text(reason, marginX, L.y);
+    doc.text(fmtDaysDE(days), pageW - marginX, L.y, { align: "right" });
+    L.y += rowH;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+// Build the full yearly report and return the jsPDF document. Kept as an
+// export so tests / callers can post-process it.
 export function generateEmployeePDF({ employee, vacations, company, year }) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const marginX = 40;
+  const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
 
   const entries = collectYearEntries({
     employee,
@@ -547,62 +704,54 @@ export function generateEmployeePDF({ employee, vacations, company, year }) {
     year,
   });
 
-  // Page 1 — header + employee info + summary + warnings
-  let y = drawHeader(doc, { company, employee, year, marginX });
-  y = drawEmployeeInfo(doc, { employee, y, marginX });
-  y = drawSummary(doc, { stats, y, marginX });
-  y = drawWarnings(doc, { employee, stats, y, marginX });
+  const L = newLayout(doc, { company, employee, year });
 
-  // Page 2 — calendar + legend
-  doc.addPage();
-  y = drawHeader(doc, { company, employee, year, marginX });
-  y = drawYearCalendar(doc, { employee, entries, year, y, marginX });
-  y = drawLegend(doc, { y, marginX });
+  // Page 1 — Stammdaten + Bilanz + Hinweise
+  drawPageHeader(L);
+  drawEmployeeInfo(L, employee);
+  drawSummary(L, stats);
+  drawWarnings(L, employee, stats);
 
-  // Page 3 — entries list (multi-page as needed)
-  doc.addPage();
-  y = drawHeader(doc, { company, employee, year, marginX });
-  y = drawEntryList(doc, { entries, year, y, marginX });
-  y = drawSonderurlaubSummary(doc, { vacations, employee, year, y, marginX });
+  // Page 2 — Kalender + Legende
+  L.newPage();
+  drawYearCalendar(L, entries, employee, year);
+  drawLegend(L, employee);
 
-  // Metadata + footers
+  // Page 3+ — Detaillierte Abwesenheiten + Sonderurlaub nach Grund
+  L.newPage();
+  drawEntryList(L, entries, year);
+  drawSonderReasons(L, vacations, employee, year);
+
   doc.setProperties({
     title: `Jahresübersicht ${employee.fullName} ${year}`,
     subject: "Mitarbeiter-Jahresübersicht",
     author: company?.name || "VacationPlanner Gold",
     creator: "VacationPlanner Gold",
+    keywords: `Urlaub, Jahresübersicht, ${year}`,
   });
 
   const total = doc.getNumberOfPages();
   for (let p = 1; p <= total; p++) {
     doc.setPage(p);
-    drawFooter(doc, { pageNum: p, totalPages: total, marginX });
+    drawPageFooter(doc, {
+      pageNum: p,
+      totalPages: total,
+      marginX: L.marginX,
+      pageW: L.pageW,
+      pageH: L.pageH,
+    });
   }
-
   return doc;
 }
 
 // Generates the PDF and triggers a save via the browser's native download
-// mechanism: a Blob + an <a download> click. No window.open, no popups, no
-// new tabs, no cross-navigation of the current page — on every platform.
-//
-// Why this is the right approach, and what was wrong before:
-// A blob: URL combined with the `download` attribute is the W3C-standard
-// way to trigger a save, and has been supported by Mobile Safari (and by
-// extension Chrome-for-iOS, which is required by Apple to run on the same
-// WebKit engine as Safari) since iOS 13. It needs no permission and never
-// opens a second window. The previous implementation additionally called
-// `window.open()` for iOS "just in case the download attribute doesn't
-// work" — but a `window.open()` call after a `click()` has already
-// happened is no longer considered part of the same user gesture, so iOS
-// reliably blocked it and threw the exact "Popup blocked" error the user
-// saw, even when the actual download via <a download> had already
-// succeeded. Removing that second call removes the failure entirely.
+// mechanism: a Blob + an invisible <a download> click. Works on desktop
+// Chrome/Firefox/Safari and on Mobile Safari / Chrome-for-iOS without a
+// popup ever being requested.
 export function downloadEmployeePDF({ employee, vacations, company, year }) {
   if (!employee || !employee.id) {
     throw new Error("Kein Mitarbeiter ausgewählt.");
   }
-
   const doc = generateEmployeePDF({ employee, vacations, company, year });
   const safeName = (employee.fullName || "Mitarbeiter").replace(/[^\p{L}\p{N}_-]+/gu, "_");
   const filename = `Jahresuebersicht_${safeName}_${year}.pdf`;
@@ -616,6 +765,7 @@ export function downloadEmployeePDF({ employee, vacations, company, year }) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.rel = "noopener";
   a.style.position = "fixed";
   a.style.opacity = "0";
   document.body.appendChild(a);

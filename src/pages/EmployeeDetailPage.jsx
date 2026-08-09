@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileDown, Printer, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileDown, X } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useConfirm } from "../contexts/ConfirmContext.jsx";
@@ -18,7 +18,6 @@ import TimeOffForm from "../components/vacation/TimeOffForm.jsx";
 import EntryActionDialog from "../components/vacation/EntryActionDialog.jsx";
 import EmployeeForm from "../components/vacation/EmployeeForm.jsx";
 import { downloadEmployeePDF } from "../lib/pdfExport.js";
-import { openPrintReport } from "../lib/printReport.js";
 
 export default function EmployeeDetailPage({ employeeId, onBack }) {
   const { employees, vacations, company, deleteVacation } = useData();
@@ -31,6 +30,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
   const [editEmp, setEditEmp] = useState(false);
   const [terminationBlock, setTerminationBlock] = useState("");
   const [reportError, setReportError] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
 
   const employee = employees.find((e) => e.id === employeeId);
   const today = todayISO();
@@ -96,26 +96,21 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
 
   function exportPDF() {
     setReportError("");
-    try {
-      downloadEmployeePDF({ employee, vacations, company, year });
-    } catch (e) {
-      console.error("PDF-Export fehlgeschlagen:", e);
-      setReportError(
-        "Der PDF-Bericht konnte nicht erstellt werden: " + (e?.message || String(e)),
-      );
-    }
-  }
-
-  function openReport() {
-    setReportError("");
-    try {
-      openPrintReport({ employee, vacations, company, year });
-    } catch (e) {
-      console.error("Druckbericht fehlgeschlagen:", e);
-      setReportError(
-        "Der Bericht konnte nicht geöffnet werden: " + (e?.message || String(e)),
-      );
-    }
+    setReportBusy(true);
+    // Yield a frame so the button visibly re-renders as "wird erstellt …"
+    // before we start the (synchronous, ~200 ms) jsPDF build.
+    requestAnimationFrame(() => {
+      try {
+        downloadEmployeePDF({ employee, vacations, company, year });
+      } catch (e) {
+        console.error("PDF-Export fehlgeschlagen:", e);
+        setReportError(
+          "Der PDF-Bericht konnte nicht erstellt werden: " + (e?.message || String(e)),
+        );
+      } finally {
+        setReportBusy(false);
+      }
+    });
   }
 
   return (
@@ -190,13 +185,14 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button className="btn-ghost bg-white shadow-soft" onClick={openReport}>
-              <Printer className="w-4 h-4" />
-              Bericht drucken
-            </button>
-            <button className="btn-ghost bg-white shadow-soft" onClick={exportPDF}>
+            <button
+              className="btn-ghost bg-white shadow-soft disabled:opacity-60"
+              onClick={exportPDF}
+              disabled={reportBusy}
+              aria-busy={reportBusy}
+            >
               <FileDown className="w-4 h-4" />
-              PDF speichern
+              {reportBusy ? "PDF wird erstellt …" : "PDF herunterladen"}
             </button>
             {canManage && (
               <button className="btn-ghost bg-black/[0.03]" onClick={() => setEditEmp(true)}>
