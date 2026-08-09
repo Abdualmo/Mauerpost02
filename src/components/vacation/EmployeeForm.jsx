@@ -60,6 +60,7 @@ export default function EmployeeForm({
   const [employmentType, setEmploymentType] = useState(employee?.employmentType || "");
   const [role, setRole] = useState(employee?.role || "employee");
   const [userId, setUserId] = useState(employee?.userId || "");
+  const [workDays, setWorkDays] = useState(employee?.workDays || [1, 2, 3, 4, 5]);
   const [error, setError] = useState("");
 
   function submit(e) {
@@ -94,6 +95,7 @@ export default function EmployeeForm({
       employmentType,
       role,
       userId,
+      workDays,
     };
     if (isEdit) updateEmployee(employee.id, data);
     else createEmployee(data);
@@ -270,6 +272,34 @@ export default function EmployeeForm({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="label">Arbeitstage pro Woche (optional)</label>
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"].map((day, i) => (
+                  <label key={i} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={workDays.includes(i + 1)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setWorkDays([...workDays, i + 1].sort((a, b) => a - b));
+                        } else {
+                          setWorkDays(workDays.filter((d) => d !== i + 1));
+                        }
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">{day.slice(0, 2)}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="text-xs text-black/50">
+                {workDays.length === 0 ? "Keine Arbeitstage ausgewählt" : `${workDays.length} Tag(e) pro Woche ausgewählt`}
+              </div>
+            </div>
           </div>
 
           <fieldset className="border border-black/10 rounded-xl px-3 pt-2 pb-3">

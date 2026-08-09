@@ -130,7 +130,7 @@ export function countWorkdays(startISO, endISO) {
   return eachDayOfInterval({ start, end }).filter(isWorkday).length;
 }
 
-export function countWorkdaysInYear(startISO, endISO, year) {
+export function countWorkdaysInYear(startISO, endISO, year, employee) {
   if (!startISO || !endISO) return 0;
   const start = parseISO(startISO);
   const end = parseISO(endISO);
@@ -139,20 +139,39 @@ export function countWorkdaysInYear(startISO, endISO, year) {
   const clippedStart = isBefore(start, yearStart) ? yearStart : start;
   const clippedEnd = isAfter(end, yearEnd) ? yearEnd : end;
   if (isAfter(clippedStart, clippedEnd)) return 0;
-  return eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(
-    isWorkday,
-  ).length;
+
+  const days = eachDayOfInterval({ start: clippedStart, end: clippedEnd });
+
+  if (employee?.workDays && Array.isArray(employee.workDays) && employee.workDays.length > 0) {
+    // Teilzeit: nur Tage zählen, die in workDays liegen UND Arbeitstage sind
+    return days.filter((d) => {
+      if (!isWorkday(d)) return false;
+      const dayOfWeek = getDay(d);
+      return employee.workDays.includes(dayOfWeek);
+    }).length;
+  }
+
+  return days.filter(isWorkday).length;
 }
 
-export function countWorkdaysInRange(startISO, endISO, rangeStart, rangeEnd) {
+export function countWorkdaysInRange(startISO, endISO, rangeStart, rangeEnd, employee) {
   const start = parseISO(startISO);
   const end = parseISO(endISO);
   const clippedStart = isBefore(start, rangeStart) ? rangeStart : start;
   const clippedEnd = isAfter(end, rangeEnd) ? rangeEnd : end;
   if (isAfter(clippedStart, clippedEnd)) return 0;
-  return eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(
-    isWorkday,
-  ).length;
+
+  const days = eachDayOfInterval({ start: clippedStart, end: clippedEnd });
+
+  if (employee?.workDays && Array.isArray(employee.workDays) && employee.workDays.length > 0) {
+    return days.filter((d) => {
+      if (!isWorkday(d)) return false;
+      const dayOfWeek = getDay(d);
+      return employee.workDays.includes(dayOfWeek);
+    }).length;
+  }
+
+  return days.filter(isWorkday).length;
 }
 
 // Half-day helper. An entry with halfDayStart/halfDayEnd reduces its
@@ -319,7 +338,7 @@ export function companyVacationWorkdaysInYear(vacations, recurring, employee, ye
   return allCompanyVacationEntries(vacations, recurring, employee, year).reduce(
     (sum, cv) => {
       if (!shouldDeductCompanyVacation(employee, cv, today)) return sum;
-      return sum + countWorkdaysInYear(cv.startDate, cv.endDate, year);
+      return sum + countWorkdaysInYear(cv.startDate, cv.endDate, year, employee);
     },
     0,
   );
@@ -331,7 +350,7 @@ export function companyVacationWorkdaysInQ1(vacations, recurring, employee, year
   return allCompanyVacationEntries(vacations, recurring, employee, year).reduce(
     (sum, cv) => {
       if (!shouldDeductCompanyVacation(employee, cv, today)) return sum;
-      return sum + countWorkdaysInRange(cv.startDate, cv.endDate, q1Start, q1End);
+      return sum + countWorkdaysInRange(cv.startDate, cv.endDate, q1Start, q1End, employee);
     },
     0,
   );
@@ -339,25 +358,25 @@ export function companyVacationWorkdaysInQ1(vacations, recurring, employee, year
 
 // Sum urlaub workdays taken in a given calendar year (by employee),
 // respecting half-day flags.
-export function urlaubWorkdaysInYear(vacations, employeeId, year) {
+export function urlaubWorkdaysInYear(vacations, employeeId, year, employee) {
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_URLAUB)
     .reduce(
       (sum, v) =>
         sum +
-        Math.max(0, countWorkdaysInYear(v.startDate, v.endDate, year) + halfDayAdjustment(v, year)),
+        Math.max(0, countWorkdaysInYear(v.startDate, v.endDate, year, employee) + halfDayAdjustment(v, year)),
       0,
     );
 }
 
 // Urlaub workdays taken between Jan 1 and Mar 31 of a given year
-export function urlaubWorkdaysInQ1(vacations, employeeId, year) {
+export function urlaubWorkdaysInQ1(vacations, employeeId, year, employee) {
   const q1Start = new Date(year, 0, 1);
   const q1End = new Date(year, 2, 31);
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_URLAUB)
     .reduce((sum, v) => {
-      const base = countWorkdaysInRange(v.startDate, v.endDate, q1Start, q1End);
+      const base = countWorkdaysInRange(v.startDate, v.endDate, q1Start, q1End, employee);
       // If a half-day falls in Q1, deduct 0.5.
       let adj = 0;
       const singleDay = v.startDate === v.endDate;
@@ -374,27 +393,27 @@ export function urlaubWorkdaysInQ1(vacations, employeeId, year) {
 }
 
 // Total sick workdays in a given calendar year for an employee.
-export function sickWorkdaysInYear(vacations, employeeId, year) {
+export function sickWorkdaysInYear(vacations, employeeId, year, employee) {
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_KRANKHEIT)
-    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
+    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year, employee), 0);
 }
 
 // Sonderurlaub: never affects the annual Urlaubsanspruch.
-export function sonderurlaubWorkdaysInYear(vacations, employeeId, year) {
+export function sonderurlaubWorkdaysInYear(vacations, employeeId, year, employee) {
   return vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_SONDERURLAUB)
-    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year), 0);
+    .reduce((sum, v) => sum + countWorkdaysInYear(v.startDate, v.endDate, year, employee), 0);
 }
 
 // Aggregate Sonderurlaub usage per reason for a given year.
 // Returns a Map<reason, days>.
-export function sonderurlaubUsageByReason(vacations, employeeId, year) {
+export function sonderurlaubUsageByReason(vacations, employeeId, year, employee) {
   const out = new Map();
   vacations
     .filter((v) => v.employeeId === employeeId && v.type === TYPE_SONDERURLAUB)
     .forEach((v) => {
-      const days = countWorkdaysInYear(v.startDate, v.endDate, year);
+      const days = countWorkdaysInYear(v.startDate, v.endDate, year, employee);
       if (days <= 0) return;
       const key = v.reason || "sonstige";
       out.set(key, (out.get(key) || 0) + days);
@@ -455,12 +474,12 @@ export function computeYearStats({ employee, vacations, recurring, year, today }
   const available = isCarryoverAvailable(year, now)
     ? carryoverTotal
     : 0;
-  const usedUrlaub = urlaubWorkdaysInYear(vacations, employee.id, year);
+  const usedUrlaub = urlaubWorkdaysInYear(vacations, employee.id, year, employee);
   const usedCompany = companyVacationWorkdaysInYear(
     vacations, recurring, employee, year, now,
   );
   const usedTotal = usedUrlaub + usedCompany;
-  const q1Urlaub = urlaubWorkdaysInQ1(vacations, employee.id, year);
+  const q1Urlaub = urlaubWorkdaysInQ1(vacations, employee.id, year, employee);
   const q1Company = companyVacationWorkdaysInQ1(
     vacations, recurring, employee, year, now,
   );
@@ -474,8 +493,8 @@ export function computeYearStats({ employee, vacations, recurring, year, today }
   const expired = !isCarryoverAvailable(year, now)
     ? carryoverTotal
     : 0;
-  const sickTotal = sickWorkdaysInYear(vacations, employee.id, year);
-  const sonderurlaubTotal = sonderurlaubWorkdaysInYear(vacations, employee.id, year);
+  const sickTotal = sickWorkdaysInYear(vacations, employee.id, year, employee);
+  const sonderurlaubTotal = sonderurlaubWorkdaysInYear(vacations, employee.id, year, employee);
   return {
     annual,
     annualFull,

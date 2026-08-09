@@ -662,7 +662,7 @@ function drawEntryList(L, entries, year) {
 
 function drawSonderReasons(L, vacations, employee, year) {
   const { doc, marginX, pageW } = L;
-  const usage = sonderurlaubUsageByReason(vacations, employee.id, year);
+  const usage = sonderurlaubUsageByReason(vacations, employee.id, year, employee);
   if (usage.size === 0) return;
 
   L.y += 12;

@@ -9,6 +9,8 @@ import {
   TYPE_URLAUB,
   crossesTermination,
   isPastTermination,
+  countWorkdaysInYear,
+  sonderurlaubUsageByReason,
 } from "../../lib/vacation.js";
 import { fmtDate } from "../../lib/date.js";
 
@@ -20,7 +22,7 @@ export default function TimeOffForm({
   initialEnd,
   onClose,
 }) {
-  const { createVacation, employees } = useData();
+  const { createVacation, employees, vacations } = useData();
   const { company } = useAuth();
   const employee = employeeProp || employees.find((e) => e.id === employeeId);
   const specialTypes = (company?.specialLeaveTypes || []).filter((t) => t.active !== false);
@@ -70,6 +72,20 @@ export default function TimeOffForm({
     return null;
   }, [mode, employee, startDate, endDate]);
 
+  const sonderurlaubAvailable = useMemo(() => {
+    if (!employee || !startDate || !endDate) return new Map();
+    const year = Number(startDate.slice(0, 4));
+    const usage = sonderurlaubUsageByReason(vacations, employee.id, year, employee);
+    const available = new Map();
+    specialTypes.forEach((t) => {
+      const used = usage.get(t.label) || 0;
+      const max = t.days || 0;
+      available.set(t.label, { used, max, remaining: Math.max(0, max - used) });
+    });
+    return available;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vacations, employee, startDate, endDate, specialTypes]);
+
   function submit(e) {
     e.preventDefault();
     setError("");
@@ -78,6 +94,18 @@ export default function TimeOffForm({
     if (terminationBlocked) return setError(terminationBlocked);
     if (type === TYPE_SONDERURLAUB && !reason)
       return setError("Bitte einen Grund für den Sonderurlaub wählen.");
+
+    if (type === TYPE_SONDERURLAUB && employee && reason) {
+      const year = Number(startDate.slice(0, 4));
+      const requestedDays = countWorkdaysInYear(startDate, endDate, year, employee);
+      const avail = sonderurlaubAvailable.get(reason);
+      if (avail && avail.remaining < requestedDays) {
+        return setError(
+          `Nicht genug Tage verfügbar. Es werden ${requestedDays} Tag(e) benötigt, aber nur ${avail.remaining} Tag(e) sind übrig.`
+        );
+      }
+    }
+
     createVacation({
       employeeId: mode === "company" ? null : employeeId,
       startDate,
@@ -186,18 +214,38 @@ export default function TimeOffForm({
                   anlegen.
                 </div>
               ) : (
-                <select
-                  className="input"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                >
-                  {specialTypes.map((t) => (
-                    <option key={t.id} value={t.label}>
-                      {t.label}
-                      {t.days ? ` (max. ${t.days} Tage)` : ""}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <select
+                    className="input"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  >
+                    <option value="">— Wählen —</option>
+                    {specialTypes.map((t) => {
+                      const avail = sonderurlaubAvailable.get(t.label);
+                      const isDisabled = avail?.remaining === 0;
+                      return (
+                        <option key={t.id} value={t.label} disabled={isDisabled}>
+                          {t.label}
+                          {avail
+                            ? ` (${avail.used}/${avail.max} Tage genutzt${isDisabled ? " - aufgebraucht" : ""})`
+                            : t.days ? ` (max. ${t.days} Tage)` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {reason && (
+                    <div className="mt-2 text-xs text-black/60">
+                      {(() => {
+                        const avail = sonderurlaubAvailable.get(reason);
+                        if (!avail) return null;
+                        return avail.remaining === 0
+                          ? "Kontingent aufgebraucht."
+                          : `Noch ${avail.remaining} Tag(e) verfügbar.`;
+                      })()}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
