@@ -32,6 +32,10 @@ if (!cssFile || !jsFile) {
 const css = readFileSync(join(assetsDir, cssFile), "utf8");
 const js = readFileSync(join(assetsDir, jsFile), "utf8");
 
+// Classic <script> (no type="module"): a module script won't load from a
+// file:// URL in Firefox and older Safari, and this bundle has no ESM
+// syntax (no `import`, no `export`, no `import.meta`) so it runs fine as
+// a plain script — which every browser accepts from file://.
 const html = `<!doctype html>
 <html lang="de">
 <head>
@@ -42,7 +46,7 @@ const html = `<!doctype html>
 </head>
 <body>
 <div id="root"></div>
-<script type="module">${js}</script>
+<script>${js}</script>
 </body>
 </html>
 `;
