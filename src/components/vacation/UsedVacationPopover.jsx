@@ -65,7 +65,7 @@ export default function UsedVacationPopover({ employeeId, year, onClose }) {
       ) : (
         <ul className="max-h-64 overflow-y-auto scrollbar-thin divide-y divide-black/5">
           {entries.map((e) => {
-            const days = countWorkdaysInYear(e.startDate, e.endDate, year);
+            const days = countWorkdaysInYear(e.startDate, e.endDate, year, employee);
             const dot = dotFor(e.type);
             return (
               <li key={e.id} className="py-2 flex items-start gap-2">

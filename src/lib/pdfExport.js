@@ -577,7 +577,7 @@ function drawLegend(L, employee) {
 }
 
 // Table of every absence entry in the year, sorted by start date.
-function drawEntryList(L, entries, year) {
+function drawEntryList(L, entries, year, employee) {
   const { doc, marginX, pageW } = L;
   sectionHeading(L, "Detaillierte Abwesenheiten");
 
@@ -629,8 +629,8 @@ function drawEntryList(L, entries, year) {
 
     const days = Math.max(
       0,
-      countWorkdaysInYear(e.startDate, e.endDate, year) +
-        (e.type === TYPE_URLAUB ? halfDayAdjustment(e, year) : 0),
+      countWorkdaysInYear(e.startDate, e.endDate, year, employee) +
+        (e.type === TYPE_URLAUB ? halfDayAdjustment(e, year, employee) : 0),
     );
     const [r, g, b] = colorForType(e.type);
     doc.setFillColor(r, g, b);
@@ -662,7 +662,7 @@ function drawEntryList(L, entries, year) {
 
 function drawSonderReasons(L, vacations, employee, year) {
   const { doc, marginX, pageW } = L;
-  const usage = sonderurlaubUsageByReason(vacations, employee.id, year, employee);
+  const usage = sonderurlaubUsageByReason(vacations, employee, year);
   if (usage.size === 0) return;
 
   L.y += 12;
@@ -719,7 +719,7 @@ export function generateEmployeePDF({ employee, vacations, company, year }) {
 
   // Page 3+ — Detaillierte Abwesenheiten + Sonderurlaub nach Grund
   L.newPage();
-  drawEntryList(L, entries, year);
+  drawEntryList(L, entries, year, employee);
   drawSonderReasons(L, vacations, employee, year);
 
   doc.setProperties({

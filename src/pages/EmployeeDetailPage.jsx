@@ -310,6 +310,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
         <EntryList
           entries={entries}
           year={year}
+          employee={employee}
           canManage={canManage}
           onDelete={async (e) => {
             if (e.recurring) return;

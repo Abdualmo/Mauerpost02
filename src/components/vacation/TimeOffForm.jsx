@@ -75,7 +75,7 @@ export default function TimeOffForm({
   const sonderurlaubAvailable = useMemo(() => {
     if (!employee || !startDate || !endDate) return new Map();
     const year = Number(startDate.slice(0, 4));
-    const usage = sonderurlaubUsageByReason(vacations, employee.id, year, employee);
+    const usage = sonderurlaubUsageByReason(vacations, employee, year);
     const available = new Map();
     specialTypes.forEach((t) => {
       const used = usage.get(t.label) || 0;

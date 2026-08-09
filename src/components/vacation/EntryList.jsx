@@ -16,7 +16,7 @@ const meta = {
   [TYPE_SONDERURLAUB]: { color: "#4A90E2", label: "Sonderurlaub" },
 };
 
-export default function EntryList({ entries, year, canManage, onDelete }) {
+export default function EntryList({ entries, year, employee, canManage, onDelete }) {
   if (entries.length === 0) {
     return (
       <div className="card p-6 text-sm text-black/50 text-center">
@@ -32,10 +32,10 @@ export default function EntryList({ entries, year, canManage, onDelete }) {
       <ul className="divide-y divide-black/5">
         {sorted.map((e) => {
           const m = meta[e.type] || { color: "#999", label: e.type };
-          const baseDays = countWorkdaysInYear(e.startDate, e.endDate, year);
+          const baseDays = countWorkdaysInYear(e.startDate, e.endDate, year, employee);
           const days =
             e.type === TYPE_URLAUB
-              ? Math.max(0, baseDays + halfDayAdjustment(e, year))
+              ? Math.max(0, baseDays + halfDayAdjustment(e, year, employee))
               : baseDays;
           const isRecurring = Boolean(e.recurring);
           const isHalf = e.halfDayStart || e.halfDayEnd;
