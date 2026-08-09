@@ -45,6 +45,18 @@ const TYPE_LABEL = {
   [TYPE_SONDERURLAUB]: "Sonderurlaub",
 };
 
+// Data URLs from <input type="file"> can be PNG, JPEG, WEBP, etc. jsPDF
+// needs the matching format string or addImage() throws — read it from the
+// data URL's mime type instead of assuming PNG.
+function imageFormatFromDataUrl(dataUrl) {
+  const m = /^data:image\/(png|jpe?g|webp)/i.exec(dataUrl || "");
+  if (!m) return null;
+  const type = m[1].toLowerCase();
+  if (type === "jpg" || type === "jpeg") return "JPEG";
+  if (type === "webp") return "WEBP";
+  return "PNG";
+}
+
 function colorForType(type) {
   if (type === TYPE_URLAUB) return COLORS.urlaub;
   if (type === TYPE_BETRIEBSURLAUB) return COLORS.betriebsurlaub;
@@ -82,11 +94,15 @@ function drawHeader(doc, { company, employee, year, marginX }) {
   let y = 40;
 
   if (company?.logo) {
-    try {
-      // Add logo up to 45pt wide/tall
-      doc.addImage(company.logo, "PNG", marginX, y, 55, 55, undefined, "FAST");
-    } catch {
-      // ignore corrupt data URLs
+    const fmt = imageFormatFromDataUrl(company.logo);
+    if (fmt) {
+      try {
+        doc.addImage(company.logo, fmt, marginX, y, 55, 55, undefined, "FAST");
+      } catch (err) {
+        console.warn("PDF: Firmenlogo konnte nicht eingefügt werden:", err);
+      }
+    } else {
+      console.warn("PDF: Firmenlogo hat ein nicht unterstütztes Format, wird übersprungen.");
     }
   }
   const textX = company?.logo ? marginX + 65 : marginX;
@@ -566,46 +582,47 @@ export function generateEmployeePDF({ employee, vacations, company, year }) {
   return doc;
 }
 
+// Generates the PDF and triggers a save via the browser's native download
+// mechanism: a Blob + an <a download> click. No window.open, no popups, no
+// new tabs, no cross-navigation of the current page — on every platform.
+//
+// Why this is the right approach, and what was wrong before:
+// A blob: URL combined with the `download` attribute is the W3C-standard
+// way to trigger a save, and has been supported by Mobile Safari (and by
+// extension Chrome-for-iOS, which is required by Apple to run on the same
+// WebKit engine as Safari) since iOS 13. It needs no permission and never
+// opens a second window. The previous implementation additionally called
+// `window.open()` for iOS "just in case the download attribute doesn't
+// work" — but a `window.open()` call after a `click()` has already
+// happened is no longer considered part of the same user gesture, so iOS
+// reliably blocked it and threw the exact "Popup blocked" error the user
+// saw, even when the actual download via <a download> had already
+// succeeded. Removing that second call removes the failure entirely.
 export function downloadEmployeePDF({ employee, vacations, company, year }) {
+  if (!employee || !employee.id) {
+    throw new Error("Kein Mitarbeiter ausgewählt.");
+  }
+
   const doc = generateEmployeePDF({ employee, vacations, company, year });
   const safeName = (employee.fullName || "Mitarbeiter").replace(/[^\p{L}\p{N}_-]+/gu, "_");
   const filename = `Jahresuebersicht_${safeName}_${year}.pdf`;
 
-  // Robust cross-browser save. jsPDF's own doc.save() falls apart on iPad
-  // Safari because it relies on the <a download> attribute that iOS ignores.
-  // Do the whole dance ourselves and surface a real error if it fails.
   const blob = doc.output("blob");
+  if (!blob || blob.size === 0) {
+    throw new Error("Die erzeugte PDF-Datei ist leer.");
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-  a.rel = "noopener";
-  a.style.display = "none";
+  a.style.position = "fixed";
+  a.style.opacity = "0";
   document.body.appendChild(a);
-  try {
-    a.click();
-  } finally {
-    // Cleanup after the browser had time to pick up the click.
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-      a.remove();
-    }, 4000);
-  }
-
-  // Detect the iOS-Safari case: the download attribute is silently ignored,
-  // the file opens inline. Users often see "nothing happens" because the
-  // navigation is to about:blank. In that case open the blob URL in a new
-  // tab so the PDF is visible and the user can share/save from there.
-  const isIOS =
-    /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
-    (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
-  if (isIOS) {
-    const opened = window.open(url, "_blank", "noopener");
-    if (!opened) {
-      throw new Error(
-        "Der Browser hat den Download blockiert. Bitte Popups für diese Seite erlauben oder stattdessen »Bericht drucken« nutzen.",
-      );
-    }
-  }
+  a.click();
+  document.body.removeChild(a);
+  // Revoke a little later — revoking immediately can race with the browser
+  // still reading the blob on some WebKit builds.
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
   return true;
 }

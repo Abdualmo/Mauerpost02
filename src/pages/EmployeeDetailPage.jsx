@@ -101,8 +101,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
     } catch (e) {
       console.error("PDF-Export fehlgeschlagen:", e);
       setReportError(
-        "Der PDF-Bericht konnte nicht erstellt werden: " + (e?.message || String(e)) +
-          " — Bitte stattdessen »Bericht drucken« verwenden.",
+        "Der PDF-Bericht konnte nicht erstellt werden: " + (e?.message || String(e)),
       );
     }
   }
