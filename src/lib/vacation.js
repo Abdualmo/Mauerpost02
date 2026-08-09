@@ -1,6 +1,7 @@
 import {
   eachDayOfInterval,
   parseISO,
+  getDay,
   isWeekend,
   isWithinInterval,
   isAfter,
@@ -10,6 +11,21 @@ import {
   subDays,
 } from "date-fns";
 import { toISO } from "./date.js";
+
+// workDays are stored as 1 = Montag … 7 = Sonntag.
+// date-fns getDay() returns 0 = Sonntag, so Sunday has to be mapped to 7.
+function isoWeekday(date) {
+  const d = getDay(date);
+  return d === 0 ? 7 : d;
+}
+
+// Does the employee work on this weekday at all?
+// No workDays stored (older records) -> treated as full week Mon-Fri.
+function worksOnWeekday(date, employee) {
+  const days = employee?.workDays;
+  if (!Array.isArray(days) || days.length === 0) return true;
+  return days.includes(isoWeekday(date));
+}
 
 // Compute Easter Sunday for a given year using the Meeus/Butcher algorithm.
 export function easterSunday(year) {
@@ -78,10 +94,7 @@ export function isWorkdayISO(dayISO) {
 // (considering their workDays, weekends, and holidays)
 export function isWorkdayForEmployee(dayISO, employee) {
   if (!isWorkdayISO(dayISO)) return false;
-  if (!employee?.workDays || employee.workDays.length === 0) return true;
-  const d = parseISO(dayISO);
-  const dayOfWeek = getDay(d);
-  return employee.workDays.includes(dayOfWeek);
+  return worksOnWeekday(parseISO(dayISO), employee);
 }
 
 export const TYPE_URLAUB = "urlaub";
@@ -150,18 +163,9 @@ export function countWorkdaysInYear(startISO, endISO, year, employee) {
   const clippedEnd = isAfter(end, yearEnd) ? yearEnd : end;
   if (isAfter(clippedStart, clippedEnd)) return 0;
 
-  const days = eachDayOfInterval({ start: clippedStart, end: clippedEnd });
-
-  if (employee?.workDays && Array.isArray(employee.workDays) && employee.workDays.length > 0) {
-    // Teilzeit: nur Tage zählen, die in workDays liegen UND Arbeitstage sind
-    return days.filter((d) => {
-      if (!isWorkday(d)) return false;
-      const dayOfWeek = getDay(d);
-      return employee.workDays.includes(dayOfWeek);
-    }).length;
-  }
-
-  return days.filter(isWorkday).length;
+  return eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(
+    (d) => isWorkday(d) && worksOnWeekday(d, employee),
+  ).length;
 }
 
 export function countWorkdaysInRange(startISO, endISO, rangeStart, rangeEnd, employee) {
@@ -171,17 +175,9 @@ export function countWorkdaysInRange(startISO, endISO, rangeStart, rangeEnd, emp
   const clippedEnd = isAfter(end, rangeEnd) ? rangeEnd : end;
   if (isAfter(clippedStart, clippedEnd)) return 0;
 
-  const days = eachDayOfInterval({ start: clippedStart, end: clippedEnd });
-
-  if (employee?.workDays && Array.isArray(employee.workDays) && employee.workDays.length > 0) {
-    return days.filter((d) => {
-      if (!isWorkday(d)) return false;
-      const dayOfWeek = getDay(d);
-      return employee.workDays.includes(dayOfWeek);
-    }).length;
-  }
-
-  return days.filter(isWorkday).length;
+  return eachDayOfInterval({ start: clippedStart, end: clippedEnd }).filter(
+    (d) => isWorkday(d) && worksOnWeekday(d, employee),
+  ).length;
 }
 
 // Half-day helper. An entry with halfDayStart/halfDayEnd reduces its
