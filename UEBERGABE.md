@@ -18,7 +18,8 @@ Abwesenheitsverwaltung für kleine Unternehmen. Zentrale Eigenschaften:
 - **Läuft im Browser** als einzelne HTML-Datei (`file://`) — auch vom USB-Stick.
 - **Daten bleiben dauerhaft erhalten** (localStorage + optionale
   Datei-Synchronisierung auf den USB-Stick).
-- **Erzeugt echte PDF-Jahresberichte** pro Mitarbeiter (Download, keine Druck-Vorschau).
+- **Erzeugt HTML-Jahresberichte** pro Mitarbeiter — eine einzelne, in sich
+  geschlossene Datei zum Öffnen im Browser oder zum Herunterladen.
 
 Das Endziel des Auftraggebers, wörtlich sinngemäß:
 
@@ -35,7 +36,7 @@ Das Endziel des Auftraggebers, wörtlich sinngemäß:
 | Build          | Vite 5                                                  |
 | Styling        | Tailwind CSS                                            |
 | Icons          | lucide-react                                            |
-| PDF            | jsPDF (`inlineDynamicImports: true` in Vite nötig)     |
+| Bericht        | HTML-Generator in `lib/htmlReport.js` (keine Abhängigkeit) |
 | Datenspeicher  | localStorage (primär) + File System Access API (USB)   |
 | State          | React Context (Auth, Data, Portable, Confirm) — kein Redux |
 | Tests          | Playwright (nur Chromium verfügbar, kein WebKit)       |
@@ -55,8 +56,7 @@ src/
   lib/
     vacation.js   ★ HERZSTÜCK — die gesamte Geschäftslogik (siehe §5)
     storage.js      localStorage-Schicht, Keys, Soft-Delete/Papierkorb
-    pdfExport.js    jsPDF-Jahresbericht + Download
-    printReport.js  A4-Druck-HTML (NICHT priorisieren — siehe §6)
+    htmlReport.js   Jahresbericht als eigenständige HTML-Datei (öffnen/download)
     portable.js     File System Access API + IndexedDB-Handle + JSON Export/Import
     date.js         Datums-Helfer (fmtDate, todayISO)
 
@@ -68,7 +68,7 @@ src/
 
   pages/
     HomePage.jsx           Übersicht, Suche, Filter, Archiv-/Papierkorb-Tabs
-    EmployeeDetailPage.jsx Kalender, Bilanz, Einträge, PDF-Button
+    EmployeeDetailPage.jsx Kalender, Bilanz, Einträge, Jahresbericht-Button
 
   components/vacation/
     AppHeader.jsx  EmployeeForm.jsx  EmployeeTable.jsx  SwipeableRow.jsx
@@ -97,8 +97,12 @@ scripts/
   department, yearlyVacationDays, weeklyHours, hireDate, terminationDate,
   contractStatus('unbefristet'|'befristet'), birthDate,
   probationStart, probationEnd, employmentType, role, userId,
-  archived, archivedAt, deletedAt }
+  workDays[], archived, archivedAt, deletedAt }
 ```
+`workDays` sind die Wochentage, an denen der Mitarbeiter tatsächlich arbeitet,
+als **1 = Montag … 7 = Sonntag** (Standard `[1,2,3,4,5]`). Achtung: `getDay()`
+aus date-fns liefert 0 für Sonntag — dafür gibt es `isoWeekday()` in
+`vacation.js`. Altdatensätze ohne das Feld gelten als volle Woche Mo–Fr.
 
 **Vacation** (`employeeId: null` = firmenweiter Eintrag, z. B. Betriebsurlaub)
 ```
@@ -127,7 +131,16 @@ Funktionen:
 - `getGermanHolidays(year)` — 9 bundesweite Feiertage, **berechnet, nicht
   hardcoded**.
 - `isWorkday(dateISO)` — nur Mo–Fr und kein Feiertag.
-- `countWorkdaysInYear(year)`.
+- `isWorkdayForEmployee(dateISO, employee)` — zusätzlich gegen die
+  individuellen `workDays` geprüft. **Anzeige und Berechnung benutzen beide
+  diese Funktion** — nie eine der beiden separat umbauen.
+- `countWorkdaysInYear(start, end, year, employee)`.
+- Die Aggregate (`urlaubWorkdaysInYear`, `urlaubWorkdaysInQ1`,
+  `sickWorkdaysInYear`, `sonderurlaubWorkdaysInYear`,
+  `sonderurlaubUsageByReason`) nehmen das Mitarbeiter-**Objekt**, nicht nur
+  die id. Das ist Absicht: ihr Ergebnis hängt von den Arbeitstagen ab, und ein
+  optionaler Parameter wurde in der Praxis vergessen → stillschweigend zu hohe
+  Werte.
 - `proratedAnnual(...)` — anteiliger Jahresanspruch bei unterjährigem Eintritt
   (volle Monate, `Math.round`).
 - `computeCarryover` / `isCarryoverAvailable` — Vorjahresrest, nutzbar bis 31.03.
@@ -154,13 +167,17 @@ Funktionen:
 1. **Sonderurlaub und Krankheit werden NIE vom normalen Urlaubsanspruch
    abgezogen.** Sie werden getrennt gezählt.
 2. **Deutsche Feiertage werden berechnet, nicht hardcoded.**
-3. **PDF-Download muss echt funktionieren** (echte `.pdf`-Datei, Download).
-   Die Funktion `downloadEmployeePDF` erzeugt einen Blob und klickt einen
-   unsichtbaren `<a download>` an — **kein `window.open`** (das brach iOS).
-   Diese Implementierung nicht wieder auf `window.open` umstellen.
-4. **»Bericht drucken« / Print Report ist NICHT erforderlich** und darf nicht
-   priorisiert oder als Hauptweg wiederhergestellt werden. `printReport.js`
-   existiert noch, der Fokus liegt aber ausschließlich auf PDF-Download.
+3. **Der Jahresbericht ist HTML, nicht PDF** (Stand 08/2026 vom Auftraggeber
+   so entschieden; die frühere jsPDF-Variante wurde ersatzlos entfernt).
+   `lib/htmlReport.js` erzeugt eine vollständig eigenständige Datei: eigenes
+   `<style>`, **keine** externen Fonts/Skripte/Bilder, damit sie offline und
+   vom USB-Stick funktioniert. Bericht und Bildschirm müssen dieselben
+   Funktionen aus `vacation.js` benutzen, damit die Zahlen nicht auseinander
+   laufen. Wer daran etwas ändert, prüft beides.
+4. **Download läuft über Blob + unsichtbaren `<a download>`** — kein
+   `window.open` (das brach seinerzeit iOS). Nur der Weg »Im Browser öffnen«
+   benutzt `window.open` und muss deshalb **synchron im Klick-Handler**
+   bleiben, sonst greift der Popup-Blocker.
 5. **Kein `window.confirm`** — stattdessen `useConfirm()` aus dem
    ConfirmContext (natives confirm wird in Sandboxes blockiert).
 6. **Modals als Sibling des Headers rendern** (React Fragment). `backdrop-blur`
@@ -234,8 +251,7 @@ klären, nicht eigenmächtig umbauen.
 
 | Problem | Ursache | Fix |
 |---|---|---|
-| PDF-Download bricht auf iOS | zusätzliches `window.open()` nach dem `<a download>`-Klick zählt nicht mehr als User-Geste | `window.open` entfernt, nur Blob + `<a download>` |
-| Logo im PDF unsichtbar | jsPDF `addImage` fest auf `'PNG'` | `imageFormatFromDataUrl` liest echten MIME-Typ (PNG/JPEG/WEBP) |
+| Download bricht auf iOS | zusätzliches `window.open()` nach dem `<a download>`-Klick zählt nicht mehr als User-Geste | `window.open` aus dem Download-Pfad entfernt, nur Blob + `<a download>` |
 | Betriebsurlaub fehlte pro Mitarbeiter | firmenweite Einträge (employeeId=null) herausgefiltert | `collectYearEntries` schließt sie ein |
 | Halbtage gingen verloren | `createVacation` reichte Flags nicht durch | `halfDayStart/halfDayEnd/reason` ergänzt |
 | Single-File-Build brach | Vite-Code-Splitting | `inlineDynamicImports: true` |
@@ -247,7 +263,7 @@ klären, nicht eigenmächtig umbauen.
 ## 10. Offene Punkte / mögliche nächste Schritte
 
 - **Echter iOS-Gerätetest** durch den Nutzer steht aus (Sandbox hat kein echtes
-  WebKit). Falls der Nutzer PDF-Download-Probleme auf echtem iPhone/iPad meldet:
+  WebKit). Falls der Nutzer Download-Probleme auf echtem iPhone/iPad meldet:
   zuerst dort ansetzen.
 - **»Bericht drucken«-Button** ist in `EmployeeDetailPage.jsx` noch vorhanden.
   Der Nutzer hat mehrfach gesagt, Print sei nicht nötig. Entfernen wäre
@@ -263,6 +279,6 @@ klären, nicht eigenmächtig umbauen.
 2. `npm install`, dann `npm run build && node scripts/build-single.mjs`.
 3. `dist/vpg-single.html` im Browser öffnen und durchklicken.
 4. Zuerst lesen: `src/lib/vacation.js` (Logik), `src/lib/storage.js`
-   (Persistenz), `src/lib/pdfExport.js` (PDF), `src/pages/EmployeeDetailPage.jsx`.
+   (Persistenz), `src/lib/htmlReport.js` (Bericht), `src/pages/EmployeeDetailPage.jsx`.
 5. **Regeln aus §6 respektieren.** Berechnungslogik in `vacation.js` und die
-   PDF-Download-Implementierung nur mit gutem Grund anfassen.
+   Berichts-Implementierung nur mit gutem Grund anfassen.

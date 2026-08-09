@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileDown, X } from "lucide-react";
+import {
+  ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileText, Download,
+  ExternalLink, X,
+} from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useConfirm } from "../contexts/ConfirmContext.jsx";
@@ -17,7 +20,11 @@ import EntryList from "../components/vacation/EntryList.jsx";
 import TimeOffForm from "../components/vacation/TimeOffForm.jsx";
 import EntryActionDialog from "../components/vacation/EntryActionDialog.jsx";
 import EmployeeForm from "../components/vacation/EmployeeForm.jsx";
-import { downloadEmployeePDF } from "../lib/pdfExport.js";
+import {
+  downloadYearReportHTML,
+  openYearReportHTML,
+  yearReportFileName,
+} from "../lib/htmlReport.js";
 
 export default function EmployeeDetailPage({ employeeId, onBack }) {
   const { employees, vacations, company, deleteVacation } = useData();
@@ -30,7 +37,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
   const [editEmp, setEditEmp] = useState(false);
   const [terminationBlock, setTerminationBlock] = useState("");
   const [reportError, setReportError] = useState("");
-  const [reportBusy, setReportBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const employee = employees.find((e) => e.id === employeeId);
   const today = todayISO();
@@ -94,23 +101,24 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
     setDraftStart(null);
   }
 
-  function exportPDF() {
+  // Building the report is plain string assembly and runs in a few ms, so it
+  // stays synchronous inside the click handler. That matters for "öffnen":
+  // window.open() only survives the popup blocker while the user gesture is
+  // still on the stack, which a deferred callback would no longer be.
+  function runReport(action) {
     setReportError("");
-    setReportBusy(true);
-    // Yield a frame so the button visibly re-renders as "wird erstellt …"
-    // before we start the (synchronous, ~200 ms) jsPDF build.
-    requestAnimationFrame(() => {
-      try {
-        downloadEmployeePDF({ employee, vacations, company, year });
-      } catch (e) {
-        console.error("PDF-Export fehlgeschlagen:", e);
-        setReportError(
-          "Der PDF-Bericht konnte nicht erstellt werden: " + (e?.message || String(e)),
-        );
-      } finally {
-        setReportBusy(false);
-      }
-    });
+    try {
+      const args = { employee, vacations, company, year };
+      if (action === "open") openYearReportHTML(args);
+      else downloadYearReportHTML(args);
+      setReportOpen(false);
+    } catch (e) {
+      console.error("Jahresbericht fehlgeschlagen:", e);
+      setReportError(
+        "Der Jahresbericht konnte nicht erstellt werden: " + (e?.message || String(e)),
+      );
+      setReportOpen(false);
+    }
   }
 
   return (
@@ -186,13 +194,11 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
           </div>
           <div className="flex gap-2 flex-wrap">
             <button
-              className="btn-ghost bg-white shadow-soft disabled:opacity-60"
-              onClick={exportPDF}
-              disabled={reportBusy}
-              aria-busy={reportBusy}
+              className="btn-ghost bg-white shadow-soft"
+              onClick={() => setReportOpen(true)}
             >
-              <FileDown className="w-4 h-4" />
-              {reportBusy ? "PDF wird erstellt …" : "PDF herunterladen"}
+              <FileText className="w-4 h-4" />
+              Jahresbericht
             </button>
             {canManage && (
               <button className="btn-ghost bg-black/[0.03]" onClick={() => setEditEmp(true)}>
@@ -352,6 +358,60 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
           onDeleted={onBack}
           onArchived={onBack}
         />
+      )}
+
+      {reportOpen && (
+        <div className="dialog-backdrop" onMouseDown={() => setReportOpen(false)}>
+          <div
+            className="dialog-panel p-5 sm:p-6 max-w-md"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex-1">
+                <div className="text-xs uppercase tracking-wide text-black/50">
+                  Jahresbericht {year}
+                </div>
+                <div className="font-semibold text-lg">{employee.fullName}</div>
+              </div>
+              <button
+                className="btn-ghost !p-2"
+                onClick={() => setReportOpen(false)}
+                aria-label="Schließen"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-sm text-black/60 mb-4">
+              Der Bericht wird aus den aktuellen Daten erzeugt und enthält
+              Stammdaten, Urlaubsbilanz, den vollständigen Jahreskalender und
+              alle Abwesenheiten. Es ist eine einzelne HTML-Datei ohne externe
+              Inhalte — sie funktioniert offline und direkt vom USB-Stick.
+            </p>
+
+            <div className="grid gap-2">
+              <button
+                className="btn-ghost bg-gold text-black justify-start"
+                onClick={() => runReport("open")}
+                autoFocus
+              >
+                <ExternalLink className="w-4 h-4" />
+                Im Browser öffnen
+              </button>
+              <button
+                className="btn-ghost bg-white shadow-soft justify-start"
+                onClick={() => runReport("download")}
+              >
+                <Download className="w-4 h-4" />
+                Als Datei herunterladen
+              </button>
+            </div>
+
+            <div className="mt-3 text-xs text-black/45 break-all">
+              Dateiname: {yearReportFileName(employee, year)}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

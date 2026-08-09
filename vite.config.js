@@ -9,8 +9,8 @@ export default defineConfig({
   },
   build: {
     // App ships as a single self-contained HTML (also for USB). Prevent Vite
-    // from code-splitting off dynamic imports (e.g. jsPDF -> html2canvas),
-    // otherwise the inline-bundler misses chunks.
+    // from code-splitting off dynamic imports, otherwise the inline-bundler
+    // in scripts/build-single.mjs misses chunks.
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
