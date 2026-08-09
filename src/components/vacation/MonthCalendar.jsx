@@ -15,6 +15,7 @@ import {
   entryCoveringDay,
   isHalfDayFor,
   holidayName,
+  isWorkdayForEmployee,
   TYPE_BETRIEBSURLAUB,
   TYPE_KRANKHEIT,
   TYPE_SONDERURLAUB,
@@ -41,6 +42,7 @@ export default function MonthCalendar({
   today,
   birthdayISO,
   terminationISO,
+  employee,
   onDayClick,
 }) {
   const first = startOfMonth(monthDate);
@@ -69,7 +71,9 @@ export default function MonthCalendar({
           const inMonth = isSameMonth(day, monthDate);
           const weekend = isWeekend(day);
           const isToday = today && isSameDay(day, parseISO(today));
-          const entry = entryCoveringDay(entries, iso);
+          const rawEntry = entryCoveringDay(entries, iso);
+          const isEmployeeWorkday = employee ? isWorkdayForEmployee(iso, employee) : !weekend;
+          const entry = rawEntry && isEmployeeWorkday ? rawEntry : null;
           const draft = draftStartISO && iso === draftStartISO;
           const isBirthday = birthdayISO && iso === birthdayISO;
           const holiday = holidayName(iso);

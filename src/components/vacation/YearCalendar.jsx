@@ -8,6 +8,7 @@ export default function YearCalendar({
   today,
   birthdayISO,
   terminationISO,
+  employee,
   onDayClick,
 }) {
   const base = new Date(year, 0, 1);
@@ -23,6 +24,7 @@ export default function YearCalendar({
           today={today}
           birthdayISO={birthdayISO}
           terminationISO={terminationISO}
+          employee={employee}
           onDayClick={onDayClick}
         />
       ))}

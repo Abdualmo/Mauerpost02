@@ -299,6 +299,7 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
         today={today}
         birthdayISO={birthdayForYear(employee.birthDate, year)}
         terminationISO={employee.terminationDate || null}
+        employee={employee}
         onDayClick={onDayClick}
       />
 

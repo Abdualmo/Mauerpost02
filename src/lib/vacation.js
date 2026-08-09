@@ -74,6 +74,16 @@ export function isWorkdayISO(dayISO) {
   return !isHolidayISO(dayISO);
 }
 
+// Check if a day is a work day for a specific employee
+// (considering their workDays, weekends, and holidays)
+export function isWorkdayForEmployee(dayISO, employee) {
+  if (!isWorkdayISO(dayISO)) return false;
+  if (!employee?.workDays || employee.workDays.length === 0) return true;
+  const d = parseISO(dayISO);
+  const dayOfWeek = getDay(d);
+  return employee.workDays.includes(dayOfWeek);
+}
+
 export const TYPE_URLAUB = "urlaub";
 export const TYPE_KRANKHEIT = "krankheit";
 export const TYPE_BETRIEBSURLAUB = "betriebsurlaub";
