@@ -1,8 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileText, Download,
-  ExternalLink, X,
-} from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, FileText } from "lucide-react";
 import { useData } from "../contexts/DataContext.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useConfirm } from "../contexts/ConfirmContext.jsx";
@@ -20,11 +17,7 @@ import EntryList from "../components/vacation/EntryList.jsx";
 import TimeOffForm from "../components/vacation/TimeOffForm.jsx";
 import EntryActionDialog from "../components/vacation/EntryActionDialog.jsx";
 import EmployeeForm from "../components/vacation/EmployeeForm.jsx";
-import {
-  downloadYearReportHTML,
-  openYearReportHTML,
-  yearReportFileName,
-} from "../lib/htmlReport.js";
+import YearReport from "../components/vacation/YearReport.jsx";
 
 export default function EmployeeDetailPage({ employeeId, onBack }) {
   const { employees, vacations, company, deleteVacation } = useData();
@@ -36,7 +29,6 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
   const [actionEntry, setActionEntry] = useState(null);
   const [editEmp, setEditEmp] = useState(false);
   const [terminationBlock, setTerminationBlock] = useState("");
-  const [reportError, setReportError] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
 
   const employee = employees.find((e) => e.id === employeeId);
@@ -99,26 +91,6 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
     const e = iso < draftStart ? draftStart : iso;
     setDraftRange({ startDate: s, endDate: e });
     setDraftStart(null);
-  }
-
-  // Building the report is plain string assembly and runs in a few ms, so it
-  // stays synchronous inside the click handler. That matters for "öffnen":
-  // window.open() only survives the popup blocker while the user gesture is
-  // still on the stack, which a deferred callback would no longer be.
-  function runReport(action) {
-    setReportError("");
-    try {
-      const args = { employee, vacations, company, year };
-      if (action === "open") openYearReportHTML(args);
-      else downloadYearReportHTML(args);
-      setReportOpen(false);
-    } catch (e) {
-      console.error("Jahresbericht fehlgeschlagen:", e);
-      setReportError(
-        "Der Jahresbericht konnte nicht erstellt werden: " + (e?.message || String(e)),
-      );
-      setReportOpen(false);
-    }
   }
 
   return (
@@ -213,19 +185,6 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
       <div className="mb-4">
         <SummaryCards stats={stats} year={year} />
       </div>
-
-      {reportError && (
-        <div className="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-800 px-4 py-3 text-sm flex items-start gap-3">
-          <div className="flex-1">{reportError}</div>
-          <button
-            className="btn-ghost !p-1 text-red-700"
-            onClick={() => setReportError("")}
-            aria-label="Meldung schließen"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       <div className="rounded-xl bg-gold-tint p-3 sm:p-4 text-sm text-black/70 mb-4">
         {canManage ? (
@@ -361,57 +320,13 @@ export default function EmployeeDetailPage({ employeeId, onBack }) {
       )}
 
       {reportOpen && (
-        <div className="dialog-backdrop" onMouseDown={() => setReportOpen(false)}>
-          <div
-            className="dialog-panel p-5 sm:p-6 max-w-md"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex-1">
-                <div className="text-xs uppercase tracking-wide text-black/50">
-                  Jahresbericht {year}
-                </div>
-                <div className="font-semibold text-lg">{employee.fullName}</div>
-              </div>
-              <button
-                className="btn-ghost !p-2"
-                onClick={() => setReportOpen(false)}
-                aria-label="Schließen"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-sm text-black/60 mb-4">
-              Der Bericht wird aus den aktuellen Daten erzeugt und enthält
-              Stammdaten, Urlaubsbilanz, den vollständigen Jahreskalender und
-              alle Abwesenheiten. Es ist eine einzelne HTML-Datei ohne externe
-              Inhalte — sie funktioniert offline und direkt vom USB-Stick.
-            </p>
-
-            <div className="grid gap-2">
-              <button
-                className="btn-ghost bg-gold text-black justify-start"
-                onClick={() => runReport("open")}
-                autoFocus
-              >
-                <ExternalLink className="w-4 h-4" />
-                Im Browser öffnen
-              </button>
-              <button
-                className="btn-ghost bg-white shadow-soft justify-start"
-                onClick={() => runReport("download")}
-              >
-                <Download className="w-4 h-4" />
-                Als Datei herunterladen
-              </button>
-            </div>
-
-            <div className="mt-3 text-xs text-black/45 break-all">
-              Dateiname: {yearReportFileName(employee, year)}
-            </div>
-          </div>
-        </div>
+        <YearReport
+          employee={employee}
+          vacations={vacations}
+          company={company}
+          year={year}
+          onClose={() => setReportOpen(false)}
+        />
       )}
     </div>
   );

@@ -137,3 +137,71 @@ button {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 4px;
 }
+
+/* Jahresbericht-Ansicht. Liegt als eigene Ebene über der App, statt eine
+   zweite Datei oder ein zweites Fenster zu erzeugen. */
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #f5f0e8;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.report-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(245, 240, 232, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Drucken: nur der Bericht kommt aufs Papier. Sichtbarkeit statt display,
+   damit das Layout des Berichts erhalten bleibt; der Bericht wird zusätzlich
+   nach links oben verankert, weil ein position:fixed-Container sonst nur
+   die erste Seite druckt. */
+@media print {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .report-root,
+  .report-root * {
+    visibility: visible !important;
+  }
+  .report-overlay {
+    position: static !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+  .report-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .report-noprint {
+    display: none !important;
+  }
+  .card {
+    box-shadow: none !important;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    break-inside: avoid;
+  }
+  @page {
+    margin: 14mm;
+  }
+}

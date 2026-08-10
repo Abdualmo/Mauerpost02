@@ -18,8 +18,8 @@ Abwesenheitsverwaltung für kleine Unternehmen. Zentrale Eigenschaften:
 - **Läuft im Browser** als einzelne HTML-Datei (`file://`) — auch vom USB-Stick.
 - **Daten bleiben dauerhaft erhalten** (localStorage + optionale
   Datei-Synchronisierung auf den USB-Stick).
-- **Erzeugt HTML-Jahresberichte** pro Mitarbeiter — eine einzelne, in sich
-  geschlossene Datei zum Öffnen im Browser oder zum Herunterladen.
+- **Jahresbericht pro Mitarbeiter** — eine eigene Ansicht **innerhalb** der
+  App. Keine zweite Datei, kein zweites Fenster.
 
 Das Endziel des Auftraggebers, wörtlich sinngemäß:
 
@@ -36,7 +36,7 @@ Das Endziel des Auftraggebers, wörtlich sinngemäß:
 | Build          | Vite 5                                                  |
 | Styling        | Tailwind CSS                                            |
 | Icons          | lucide-react                                            |
-| Bericht        | HTML-Generator in `lib/htmlReport.js` (keine Abhängigkeit) |
+| Bericht        | React-Ansicht `components/vacation/YearReport.jsx`      |
 | Datenspeicher  | localStorage (primär) + File System Access API (USB)   |
 | State          | React Context (Auth, Data, Portable, Confirm) — kein Redux |
 | Tests          | Playwright (nur Chromium verfügbar, kein WebKit)       |
@@ -56,7 +56,6 @@ src/
   lib/
     vacation.js   ★ HERZSTÜCK — die gesamte Geschäftslogik (siehe §5)
     storage.js      localStorage-Schicht, Keys, Soft-Delete/Papierkorb
-    htmlReport.js   Jahresbericht als eigenständige HTML-Datei (öffnen/download)
     portable.js     File System Access API + IndexedDB-Handle + JSON Export/Import
     date.js         Datums-Helfer (fmtDate, todayISO)
 
@@ -74,7 +73,7 @@ src/
     AppHeader.jsx  EmployeeForm.jsx  EmployeeTable.jsx  SwipeableRow.jsx
     TimeOffForm.jsx  MonthCalendar.jsx  YearCalendar.jsx  SummaryCards.jsx
     EntryList.jsx  EntryActionDialog.jsx  UsedVacationPopover.jsx
-    SettingsPanel.jsx
+    SettingsPanel.jsx  YearReport.jsx
 
 scripts/
   build-single.mjs     → dist/vpg-single.html            (Single-File-App)
@@ -167,17 +166,18 @@ Funktionen:
 1. **Sonderurlaub und Krankheit werden NIE vom normalen Urlaubsanspruch
    abgezogen.** Sie werden getrennt gezählt.
 2. **Deutsche Feiertage werden berechnet, nicht hardcoded.**
-3. **Der Jahresbericht ist HTML, nicht PDF** (Stand 08/2026 vom Auftraggeber
-   so entschieden; die frühere jsPDF-Variante wurde ersatzlos entfernt).
-   `lib/htmlReport.js` erzeugt eine vollständig eigenständige Datei: eigenes
-   `<style>`, **keine** externen Fonts/Skripte/Bilder, damit sie offline und
-   vom USB-Stick funktioniert. Bericht und Bildschirm müssen dieselben
-   Funktionen aus `vacation.js` benutzen, damit die Zahlen nicht auseinander
-   laufen. Wer daran etwas ändert, prüft beides.
-4. **Download läuft über Blob + unsichtbaren `<a download>`** — kein
-   `window.open` (das brach seinerzeit iOS). Nur der Weg »Im Browser öffnen«
-   benutzt `window.open` und muss deshalb **synchron im Klick-Handler**
-   bleiben, sonst greift der Popup-Blocker.
+3. **Der Jahresbericht läuft komplett in der App** (Stand 08/2026 vom
+   Auftraggeber so entschieden). `YearReport.jsx` ist eine Overlay-Ansicht in
+   derselben Seite. Es wird **keine zweite HTML-Datei geschrieben, kein Tab
+   und kein Fenster geöffnet** — vorherige Varianten mit jsPDF-Download bzw.
+   generierter HTML-Datei wurden beide ersatzlos entfernt. Wer hier etwas
+   ergänzt, darf weder `window.open` noch einen Datei-Download einbauen.
+4. **Der Bericht benutzt dieselben Bausteine wie die Akte** — `YearCalendar`,
+   `EntryList` und `computeYearStats`, nicht nachgebaute Kopien. Genau
+   deshalb können Bericht und Bildschirm nicht auseinander laufen. Der
+   »Drucken«-Knopf ruft nur `window.print()`; das Druckbild steuert der
+   `@media print`-Block in `index.css` über `.report-root` /
+   `.report-noprint`.
 5. **Kein `window.confirm`** — stattdessen `useConfirm()` aus dem
    ConfirmContext (natives confirm wird in Sandboxes blockiert).
 6. **Modals als Sibling des Headers rendern** (React Fragment). `backdrop-blur`
@@ -251,7 +251,7 @@ klären, nicht eigenmächtig umbauen.
 
 | Problem | Ursache | Fix |
 |---|---|---|
-| Download bricht auf iOS | zusätzliches `window.open()` nach dem `<a download>`-Klick zählt nicht mehr als User-Geste | `window.open` aus dem Download-Pfad entfernt, nur Blob + `<a download>` |
+| Jahresbericht als eigene Datei/eigener Tab | Popup-Blocker, `blob:`-Navigation aus `file://` gesperrt, iOS-Downloadprobleme | Bericht ist eine Ansicht IN der App (`YearReport.jsx`) — kein Fenster, keine Datei |
 | Betriebsurlaub fehlte pro Mitarbeiter | firmenweite Einträge (employeeId=null) herausgefiltert | `collectYearEntries` schließt sie ein |
 | Halbtage gingen verloren | `createVacation` reichte Flags nicht durch | `halfDayStart/halfDayEnd/reason` ergänzt |
 | Single-File-Build brach | Vite-Code-Splitting | `inlineDynamicImports: true` |
@@ -263,12 +263,10 @@ klären, nicht eigenmächtig umbauen.
 ## 10. Offene Punkte / mögliche nächste Schritte
 
 - **Echter iOS-Gerätetest** durch den Nutzer steht aus (Sandbox hat kein echtes
-  WebKit). Falls der Nutzer Download-Probleme auf echtem iPhone/iPad meldet:
-  zuerst dort ansetzen.
-- **»Bericht drucken«-Button** ist in `EmployeeDetailPage.jsx` noch vorhanden.
-  Der Nutzer hat mehrfach gesagt, Print sei nicht nötig. Entfernen wäre
-  konsistent, ist aber **noch nicht ausdrücklich beauftragt** — vor dem Löschen
-  kurz mit dem Nutzer abstimmen (der Button funktioniert aktuell).
+  WebKit). Da der Bericht nichts mehr herunterlädt und kein Fenster öffnet,
+  ist der frühere iOS-Problembereich entfallen.
+- **Jahresbericht für mehrere Mitarbeiter auf einmal** gibt es nicht; der
+  Bericht ist immer genau ein Mitarbeiter und ein Jahr.
 - **Echte USB-Portabilität ohne Nutzeraktion** → ggf. Electron/Tauri (siehe §8).
 
 ---
@@ -279,6 +277,7 @@ klären, nicht eigenmächtig umbauen.
 2. `npm install`, dann `npm run build && node scripts/build-single.mjs`.
 3. `dist/vpg-single.html` im Browser öffnen und durchklicken.
 4. Zuerst lesen: `src/lib/vacation.js` (Logik), `src/lib/storage.js`
-   (Persistenz), `src/lib/htmlReport.js` (Bericht), `src/pages/EmployeeDetailPage.jsx`.
+   (Persistenz), `src/components/vacation/YearReport.jsx` (Bericht),
+   `src/pages/EmployeeDetailPage.jsx`.
 5. **Regeln aus §6 respektieren.** Berechnungslogik in `vacation.js` und die
    Berichts-Implementierung nur mit gutem Grund anfassen.
